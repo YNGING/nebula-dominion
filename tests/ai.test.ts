@@ -20,4 +20,13 @@ describe('IA contro IA', () => {
       expect(w.winner).not.toBeNull();
     }, 120_000);
   }
+
+  it('una partita a 4 fazioni (difficile) si conclude senza errori', () => {
+    const match = new Match({ mapId: 'orione', aiCount: 3, difficulty: 'hard', seed: 11, spectate: true });
+    const w = match.world;
+    while (!w.over && w.tick < 20 * 60 * 45) match.step();
+    console.log(`[4 fazioni] fine dopo ${(w.tick / 1200).toFixed(1)} min, vincitore ${w.winner}`);
+    expect(w.over).toBe(true);
+    expect(w.factions.filter((f) => f.alive)).toHaveLength(1);
+  }, 180_000);
 });
