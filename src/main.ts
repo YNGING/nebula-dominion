@@ -17,6 +17,7 @@ async function waitFonts(): Promise<void> {
 }
 
 void waitFonts().then(() => {
+  document.getElementById('boot')?.remove();
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: 'app',
