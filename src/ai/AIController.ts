@@ -274,7 +274,7 @@ export class AIController {
       }
     }
     for (const f of w.factions) {
-      if (!f.alive || f.id === this.fid) continue;
+      if (!f.alive || !w.isEnemy(this.fid, f.id)) continue;
       const m = w.mothershipOf(f.id);
       if (!m) continue;
       const score = dist(from.x, from.y, m.x, m.y) * (big ? 0.6 : 1.4);

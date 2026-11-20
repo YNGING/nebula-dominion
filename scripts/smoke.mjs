@@ -164,6 +164,49 @@ try {
   const endTheme = await page.evaluate(() => window.__audio.music.state.theme);
   if (endTheme !== 'victory' && endTheme !== 'defeat') errors.push(`tema di fine partita: ${endTheme}`);
 
+  // campagna: pagina, briefing, primi passi del tutorial, fine missione
+  await page.evaluate(() => {
+    const game = window.__game;
+    game.scene.getScene('Hud').scene.stop();
+    game.scene.stop('Game');
+    game.scene.start('Menu');
+  });
+  await page.waitForFunction(() => window.__game.scene.isActive('Menu'));
+  await page.evaluate(() => window.__game.scene.getScene('Menu').goto('campaign'));
+  await sleep(500);
+  await page.screenshot({ path: `${OUT}/7a-campaign.png` });
+  await page.evaluate(() => window.__game.scene.getScene('Menu').startMission('tutorial'));
+  await page.waitForFunction(() => window.__game.scene.isActive('Hud'), null, { timeout: 10000 });
+  await sleep(800);
+  await page.screenshot({ path: `${OUT}/7b-briefing.png` });
+  const briefing = await page.evaluate(() => {
+    const gs = window.__game.scene.getScene('Game');
+    return { paused: gs.paused, step: gs.match.mission.data.step };
+  });
+  if (!briefing.paused) errors.push('il briefing non mette in pausa');
+  await page.keyboard.press('Enter');
+  await sleep(300);
+  await page.evaluate(() => {
+    const cam = window.__game.scene.getScene('Game').cameras.main;
+    cam.scrollX += 300;
+    cam.scrollY += 200;
+  });
+  await sleep(1500);
+  await page.keyboard.press('KeyC');
+  await sleep(1500);
+  const tutorialStep = await page.evaluate(() => window.__game.scene.getScene('Game').match.mission.data.step);
+  if (tutorialStep < 2) errors.push(`il tutorial non avanza (passo ${tutorialStep})`);
+  await page.screenshot({ path: `${OUT}/7c-tutorial.png` });
+  const missionEnd = await page.evaluate(() => {
+    const gs = window.__game.scene.getScene('Game');
+    gs.match.mission.win();
+    for (const e of gs.world.events) gs.onEvent(e);
+    return { over: gs.world.over, next: gs.missionResult?.nextId ?? null, saved: JSON.parse(localStorage.getItem('nd-campaign') ?? '{}').unlocked };
+  });
+  await sleep(2200);
+  await page.screenshot({ path: `${OUT}/7d-mission-over.png` });
+  if (missionEnd.next !== 'minerali' || missionEnd.saved !== 1) errors.push(`fine missione non registrata: ${JSON.stringify(missionEnd)}`);
+
   // partita veloce IA contro IA in modalità spettatore fino alla fine
   await page.evaluate(() => {
     const game = window.__game;
@@ -193,7 +236,7 @@ try {
   await sleep(2500);
   await page.screenshot({ path: `${OUT}/6-gameover.png` });
 
-  console.log(JSON.stringify({ renderer, musicInGame, endTheme, state, survival, survivalEnd, result, errors }, null, 2));
+  console.log(JSON.stringify({ renderer, musicInGame, endTheme, tutorialStep, missionEnd, survival, survivalEnd, result, errors }, null, 2));
   if (errors.length) process.exitCode = 1;
 } finally {
   await browser?.close();

@@ -23,6 +23,8 @@ interface PlanetView {
 export interface SelectionView {
   units: ReadonlySet<number>;
   planet: number;
+  /** segnale pulsante delle missioni */
+  beacon?: { x: number; y: number } | null;
 }
 
 const DEPTH = {
@@ -197,19 +199,25 @@ export class WorldRenderer {
     return this.visionSources.some((s) => (x - s.x) ** 2 + (y - s.y) ** 2 < s.r * s.r);
   }
 
+  /** Fazione della squadra del giocatore (lui stesso o un alleato). */
+  private friendly(f: number): boolean {
+    return f === this.humanId || (f >= 0 && this.world.teamOf(f) === this.world.teamOf(this.humanId));
+  }
+
   isVisible(u: Unit): boolean {
-    return this.humanId < 0 || u.faction === this.humanId || this.visibleIds.has(u.id);
+    return this.humanId < 0 || this.friendly(u.faction) || this.visibleIds.has(u.id);
   }
 
   private updateVisibility(): void {
     const w = this.world;
     const sources = this.visionSources;
     sources.length = 0;
-    for (const u of w.units) if (u.faction === this.humanId) sources.push({ x: u.x, y: u.y, r: UNITS[u.kind].vision });
-    for (const p of w.planets) if (p.owner === this.humanId) sources.push({ x: p.x, y: p.y, r: p.radius + ECONOMY.planetVision });
+    // la visione è condivisa con gli alleati
+    for (const u of w.units) if (this.friendly(u.faction)) sources.push({ x: u.x, y: u.y, r: UNITS[u.kind].vision });
+    for (const p of w.planets) if (p.owner >= 0 && this.friendly(p.owner)) sources.push({ x: p.x, y: p.y, r: p.radius + ECONOMY.planetVision });
     this.visibleIds.clear();
     for (const u of w.units) {
-      if (u.faction === this.humanId) continue;
+      if (this.friendly(u.faction)) continue;
       for (const s of sources) {
         const dx = u.x - s.x;
         const dy = u.y - s.y;
@@ -567,7 +575,20 @@ export class WorldRenderer {
       }
     });
 
-    // selezione e barre della vita
+    // segnale delle missioni
+    if (sel.beacon) {
+      const b = sel.beacon;
+      const pulse = (this.time * 1.2) % 1;
+      g.lineStyle(3 * lw, 0xffd54f, 1 - pulse);
+      g.strokeCircle(b.x, b.y, 40 + pulse * 90);
+      g.lineStyle(2 * lw, 0xffd54f, 0.9);
+      g.strokeCircle(b.x, b.y, 26);
+      g.lineBetween(b.x, b.y - 60, b.x, b.y - 32);
+      g.fillStyle(0xffd54f, 0.9);
+      g.fillTriangle(b.x - 9, b.y - 44, b.x + 9, b.y - 44, b.x, b.y - 30);
+    }
+
+        // selezione e barre della vita
     for (const u of w.units) {
       if (!this.isVisible(u)) continue;
       const x = u.px + (u.x - u.px) * alpha;

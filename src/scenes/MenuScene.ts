@@ -5,6 +5,8 @@ import { MAPS, getMap } from '../data/maps';
 import { BUILDABLE_SHIPS, UNITS } from '../data/units';
 import type { MatchConfig } from '../game/Match';
 import { getSurvivalRecord } from '../game/records';
+import { CAMPAIGN } from '../game/missions/campaign';
+import { isUnlocked, loadProgress } from '../game/missions/progress';
 import { sfx } from '../render/audio';
 import { music } from '../render/music';
 import { gfx } from '../render/settings';
@@ -60,7 +62,7 @@ function loadSettings(): Settings {
   }
 }
 
-type Page = 'main' | 'skirmish' | 'survival' | 'settings';
+type Page = 'main' | 'skirmish' | 'survival' | 'settings' | 'campaign';
 
 interface Row {
   label: string;
@@ -91,7 +93,7 @@ export class MenuScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', this.build, this));
     this.input.keyboard?.on('keydown-ENTER', () => {
       if (this.page === 'main') this.goto('skirmish');
-      else if (this.page !== 'settings') this.start();
+      else if (this.page === 'skirmish' || this.page === 'survival') this.start();
     });
     this.input.keyboard?.on('keydown-ESC', () => this.goto('main'));
   }
@@ -208,12 +210,53 @@ export class MenuScene extends Phaser.Scene {
     const recText = rec ? `Record (${DIFFICULTIES[DIFFS[this.settings.diff]].label}): ondata ${rec.wave}` : 'Resisti a ondate di invasori sempre più forti';
     this.bigButton(c, cx, y, bw, 'SOPRAVVIVENZA', recText, () => this.goto('survival'));
     y += step;
-    this.bigButton(c, cx, y, bw, 'CAMPAGNA', 'In arrivo: tutorial e missioni', () => undefined, false);
+    const prog = loadProgress();
+    const done = CAMPAIGN.filter((m) => prog.best[m.id]).length;
+    this.bigButton(c, cx, y, bw, 'CAMPAGNA', done === 0 ? 'Tutorial e 5 missioni: inizia da qui!' : `Missioni completate: ${done}/${CAMPAIGN.length}`, () =>
+      this.goto('campaign'),
+    );
     y += step;
     this.bigButton(c, cx, y, bw, 'IMPOSTAZIONI', 'Musica, effetti sonori e grafica', () => this.goto('settings'));
     y += step;
     if (H - y > 130 && W >= 640) this.shipLegend(c, W, y);
     this.footer(c, W, H);
+  }
+
+  /** Pagina della campagna: missioni in sequenza, sbloccate vincendo la precedente. */
+  private buildCampaign(c: Phaser.GameObjects.Container, y: number, W: number, H: number): void {
+    const cx = W / 2;
+    const prog = loadProgress();
+    const twoCols = W >= 900 && H < 860;
+    const bw = twoCols ? Math.min(400, W / 2 - 40) : Math.min(460, W - 40);
+    const step = H < 700 ? 74 : 84;
+    const nextIdx = CAMPAIGN.findIndex((m, i) => isUnlocked(prog, i) && !prog.best[m.id]);
+    CAMPAIGN.forEach((m, i) => {
+      const col = twoCols ? (i < 3 ? 0 : 1) : 0;
+      const row = twoCols ? i % 3 : i;
+      const x = twoCols ? cx + (col === 0 ? -bw / 2 - 14 : bw / 2 + 14) : cx;
+      const yy = y + 10 + row * step;
+      const unlocked = isUnlocked(prog, i);
+      const best = prog.best[m.id];
+      const name = `${i === 0 ? 'ADDESTRAMENTO' : `${i}. ${m.title.toUpperCase()}`}${best ? '  ✓' : ''}`;
+      const sub = !unlocked
+        ? 'Bloccata: completa la missione precedente'
+        : best
+          ? `${m.subtitle}  ·  miglior tempo ${fmtTicks(best)}`
+          : m.subtitle;
+      this.bigButton(c, x, yy, bw, name, sub, () => this.startMission(m.id), unlocked);
+      if (i === nextIdx) {
+        const glow = this.add.rectangle(x, yy, bw + 8, 78).setStrokeStyle(2, 0xffd54f, 0.9);
+        this.tweens.add({ targets: glow, alpha: 0.3, yoyo: true, repeat: -1, duration: 700 });
+        c.add(glow);
+      }
+    });
+    this.backButton(c);
+    this.footer(c, W, H);
+  }
+
+  private startMission(id: string): void {
+    sfx.unlock();
+    this.scene.start('Game', { mode: 'mission', missionId: id, mapId: '', aiCount: 0, difficulty: 'normal' } satisfies MatchConfig);
   }
 
   /** Pagina delle impostazioni: si applicano subito e restano salvate. */
@@ -367,6 +410,10 @@ export class MenuScene extends Phaser.Scene {
     }
     if (this.page === 'settings') {
       this.buildSettings(c, y, W, H);
+      return;
+    }
+    if (this.page === 'campaign') {
+      this.buildCampaign(c, y, W, H);
       return;
     }
     this.backButton(c);

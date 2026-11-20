@@ -33,6 +33,18 @@ export interface FactionSetup {
   team?: number;
   /** fazione senza Nave Madre (ondate della sopravvivenza): mai eliminata, esclusa dalla vittoria */
   invader?: boolean;
+  /** nessuna Nave Madre né Minatori iniziali (le unità le crea la missione) */
+  noBase?: boolean;
+  /** minerali iniziali (predefiniti: ECONOMY.startMinerals) */
+  minerals?: number;
+}
+
+/** Restrizioni di una missione. */
+export interface WorldRules {
+  /** navi producibili (predefinite: tutte) */
+  allowedShips?: UnitKind[];
+  research?: boolean;
+  turrets?: boolean;
 }
 
 export interface WorldSetup {
@@ -43,6 +55,11 @@ export interface WorldSetup {
   startUnits?: boolean;
   /** true: nessuna vittoria possibile, solo la sconfitta (sopravvivenza) */
   endless?: boolean;
+  /** true: vittoria e sconfitta le decide la missione (World.finish) */
+  scripted?: boolean;
+  /** posizioni di partenza fissate (indici di map.spawns, nell'ordine delle fazioni con base) */
+  spawnOrder?: number[];
+  rules?: WorldRules;
 }
 
 export class World {
@@ -62,6 +79,11 @@ export class World {
   over = false;
   winner: FactionId | null = null;
   readonly endless: boolean;
+  readonly scripted: boolean;
+  readonly rules: WorldRules;
+  /** motivo della fine partita (missioni) */
+  overReason = '';
+  private readonly spawnOrder: number[] | undefined;
   /** punto di partenza di ogni fazione */
   spawnOf: { x: number; y: number }[] = [];
 
@@ -77,6 +99,9 @@ export class World {
     this.height = setup.map.height;
     this.rng = new Rng(setup.seed);
     this.endless = setup.endless ?? false;
+    this.scripted = setup.scripted ?? false;
+    this.rules = setup.rules ?? {};
+    this.spawnOrder = setup.spawnOrder;
     this.grid = new SpatialGrid<Unit>(this.width, this.height, 128);
 
     this.factions = setup.factions.map((fs, i) => ({
@@ -90,7 +115,8 @@ export class World {
       invader: fs.invader ?? false,
       research: emptyLevels(),
       researching: null,
-      minerals: ECONOMY.startMinerals,
+      minerals: fs.minerals ?? ECONOMY.startMinerals,
+      noBase: fs.noBase ?? false,
       incomeBonus: fs.controller === 'ai' ? DIFFICULTIES[fs.difficulty].incomeBonus : 1,
       alive: true,
       eliminatedAt: -1,
@@ -157,11 +183,15 @@ export class World {
   }
 
   private placeStartUnits(): void {
-    const players = this.factions.filter((f) => !f.invader);
+    const players = this.factions.filter((f) => !f.invader && !f.noBase);
     const n = players.length;
     const spawns = this.map.spawns;
     let order: number[];
-    if (n <= 2) {
+    if (this.spawnOrder) {
+      order = this.spawnOrder;
+    } else if (spawns.length < 2) {
+      order = [0];
+    } else if (n <= 2) {
       const pairs = spawns.length >= 4 ? [[0, 1], [1, 0], [2, 3], [3, 2]] : [[0, 1], [1, 0]];
       order = this.rng.pick(pairs);
     } else {
@@ -398,11 +428,20 @@ export class World {
     if ((human && !human.alive) || alive.length === 0) {
       this.over = true;
       this.winner = pickWinner();
-    } else if (!this.endless && teams.size <= 1 && new Set(contenders.map((f) => f.team)).size > 1) {
+    } else if (!this.endless && !this.scripted && teams.size <= 1 && new Set(contenders.map((f) => f.team)).size > 1) {
       this.over = true;
       this.winner = pickWinner();
     }
     if (this.over) this.events.push({ t: 'gameOver', winner: this.winner });
+  }
+
+  /** Chiude la partita (usato dalle missioni). */
+  finish(winner: FactionId | null, reason = ''): void {
+    if (this.over) return;
+    this.over = true;
+    this.winner = winner;
+    this.overReason = reason;
+    this.events.push({ t: 'gameOver', winner });
   }
 
   // ---------------------------------------------------------------- loop

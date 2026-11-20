@@ -15,6 +15,7 @@ Realizzato con **Phaser 3 + TypeScript + Vite**. Tutta la grafica e l'audio sono
 ### Modalità
 
 - **Schermaglia**: tu contro 1-3 IA su una mappa fissa o casuale; vince chi distrugge tutte le Navi Madri nemiche.
+- **Campagna**: un tutorial guidato e 5 missioni con obiettivi, dialoghi e regole proprie (Corsa ai minerali, Testa di ponte, Assedio, Scorta, Dominio con un alleato). Ogni vittoria sblocca la missione successiva; avanzamento e migliori tempi sono salvati nel browser.
 - **Sopravvivenza**: sei solo contro lo Sciame del Vuoto. Le ondate arrivano dai bordi di una mappa casuale, ogni volta più numerose e meglio armate (nuovi tipi di nave, Corazzate "boss" ogni 5 ondate, potenziamenti ogni 4). Il record di ondate per difficoltà viene salvato nel browser.
 
 ### Mappe
@@ -84,7 +85,7 @@ npm run smoke      # smoke test con Playwright sulla build (richiede Playwright 
 
 - `src/sim/` — simulazione deterministica a 20 tick/s in TypeScript puro (nessun import di Phaser): movimento, combattimento, economia, conquista, comandi.
 - `src/ai/` — IA a macchina a stati (economia, espansione, difesa, ondate d'attacco), tre livelli di difficoltà.
-- `src/game/` — `Match` (assembla mondo e controller), modalità sopravvivenza (`modes/SurvivalController.ts`), record.
+- `src/game/` — `Match` (assembla mondo e controller), modalità sopravvivenza (`modes/SurvivalController.ts`), record, campagna (`missions/`: definizioni delle missioni, `MissionController`, avanzamento).
 - `src/data/` — statistiche di navi e armi, ricerca, dottrine, mappe: il bilanciamento si fa qui.
 - `src/data/mapgen.ts` — generatore di mappe casuali simmetriche (deterministico dato il seme).
 - `src/sim/stats.ts` — statistiche effettive per fazione (base + dottrina + ricerca).

@@ -5,6 +5,7 @@ import { ARMOR_LABEL, BUILDABLE_SHIPS, BUILD_HOTKEYS, ECONOMY, UNITS, type UnitK
 import { sfx } from '../render/audio';
 import { shipKey } from '../render/textures';
 import { researchCost, researchTime } from '../sim/stats';
+import { CAMPAIGN } from '../game/missions/campaign';
 import { TICK_RATE, type Unit } from '../sim/types';
 import type { GameScene } from './GameScene';
 
@@ -96,7 +97,19 @@ export class HudScene extends Phaser.Scene {
   private messages: Phaser.GameObjects.Text[] = [];
   private lastAlert: { x: number; y: number } | null = null;
   private overlay: Phaser.GameObjects.Container | null = null;
-  private overlayKind: 'help' | 'confirm' | 'over' | null = null;
+  private overlayKind: 'help' | 'confirm' | 'over' | 'briefing' | null = null;
+  // missioni
+  private objPanel: Phaser.GameObjects.Container | null = null;
+  private objRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private objKey = '';
+  private dialogBox!: Phaser.GameObjects.Container;
+  private dialogBg!: Phaser.GameObjects.Rectangle;
+  private dialogSpeaker!: Phaser.GameObjects.Text;
+  private dialogText!: Phaser.GameObjects.Text;
+  private dialogRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private dialogSeq = 0;
+  private dialogHideAt = 0;
+  private highlightG!: Phaser.GameObjects.Graphics;
   private pauseText!: Phaser.GameObjects.Text;
   private armedText!: Phaser.GameObjects.Text;
   private mmDragging = false;
@@ -173,11 +186,22 @@ export class HudScene extends Phaser.Scene {
     });
     this.input.on('pointerup', () => (this.mmDragging = false));
 
+    this.objPanel = null;
+    this.objKey = '';
+    this.dialogSeq = 0;
+    this.dialogBg = this.add.rectangle(0, 0, 10, 10, 0x070b1a, 0.94).setOrigin(0, 0).setStrokeStyle(1, 0x4f7bd6);
+    this.dialogSpeaker = text(this, 14, 8, '', 17, '#ffd54f', true);
+    this.dialogText = text(this, 14, 32, '', 17, '#e3eaff').setLineSpacing(3);
+    this.dialogBox = this.add.container(0, 0, [this.dialogBg, this.dialogSpeaker, this.dialogText]).setVisible(false).setDepth(40);
+    this.highlightG = this.add.graphics().setDepth(45);
+
     this.layout();
     this.scale.on('resize', this.layout, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', this.layout, this));
 
-    if (this.gs.humanId >= 0) {
+    if (this.gs.humanId >= 0 && this.gs.match.mission) {
+      this.showBriefing();
+    } else if (this.gs.humanId >= 0) {
       const sv = this.gs.match.survival;
       this.message(
         sv
@@ -263,13 +287,124 @@ export class HudScene extends Phaser.Scene {
         this.toggleHelp();
         this.pausedBeforeHelp = wasPaused;
       } else if (kind === 'over') this.showGameOver(this.gs.world.winner === this.gs.humanId);
+      else if (kind === 'briefing') this.showBriefing();
       else this.showMenuConfirm(true);
     }
   }
 
   isOver(x: number, y: number): boolean {
     if (this.overlay) return true;
+    if (this.objPanel && inRect(this.objRect, x, y)) return true;
+    if (this.dialogBox?.visible && inRect(this.dialogRect, x, y)) return true;
     return [this.topRect, this.panelRect, this.cardRect, this.mmRect].some((r) => inRect(r, x, y));
+  }
+
+  // ------------------------------------------------------------ missioni
+
+  private showBriefing(): void {
+    const mission = this.gs.match.mission;
+    if (!mission || this.overlay) return;
+    this.overlayKind = 'briefing';
+    this.gs.paused = true;
+    const def = mission.def;
+    const idx = CAMPAIGN.indexOf(def);
+    const { c, x, y } = this.makeOverlay(760, 430);
+    const box = c.list[1] as Phaser.GameObjects.Rectangle;
+    const cx = x + box.width / 2;
+    c.add(text(this, cx, y + 34, idx === 0 ? 'CAMPAGNA' : `MISSIONE ${idx} DI ${CAMPAIGN.length - 1}`, 18, '#ffd54f', true).setOrigin(0.5));
+    c.add(text(this, cx, y + 72, def.title.toUpperCase(), 34, '#ffffff', true).setOrigin(0.5).setFontFamily('Orbitron, sans-serif'));
+    c.add(text(this, cx, y + 108, def.subtitle, 18, '#8fa6d6').setOrigin(0.5));
+    c.add(
+      text(this, x + 36, y + 146, def.briefing.join('\n'), 18, '#dbe4ff')
+        .setLineSpacing(6)
+        .setWordWrapWidth(box.width - 72),
+    );
+    const goals = mission.objectives.map((o) => `${o.optional ? '◇' : '○'} ${o.text}${o.optional ? ' (facoltativo)' : ''}`);
+    c.add(text(this, x + 36, y + box.height - 128, goals.join('\n'), 17, '#9cff9c').setLineSpacing(4).setWordWrapWidth(box.width - 72));
+    this.overlayButton(c, cx, y + box.height - 42, 'INIZIA', () => this.closeBriefing());
+  }
+
+  private closeBriefing(): void {
+    if (this.overlayKind !== 'briefing') return;
+    this.closeOverlay();
+    this.gs.paused = false;
+    sfx.unlock();
+  }
+
+  /** Pannello obiettivi in alto a sinistra (ricostruito solo quando cambia). */
+  private refreshObjectives(): void {
+    const mission = this.gs.match.mission;
+    if (!mission) return;
+    const timer = mission.timer ? Math.ceil(mission.timeLeft()) : -1;
+    const key = JSON.stringify([mission.objectives, timer]);
+    if (key === this.objKey) return;
+    this.objKey = key;
+    this.objPanel?.destroy();
+    const lines: { t: string; color: string }[] = [];
+    for (const o of mission.objectives) {
+      const mark = o.status === 'done' ? '✓' : o.status === 'failed' ? '✗' : o.optional ? '◇' : '○';
+      const color = o.status === 'done' ? '#76ff7a' : o.status === 'failed' ? '#ff6e6e' : o.optional ? '#9fb0d8' : '#ffffff';
+      lines.push({ t: `${mark} ${o.text}${o.progress ? `  (${o.progress})` : ''}`, color });
+    }
+    if (mission.timer) lines.push({ t: `⏱ ${mission.timer.label}: ${fmtTime(timer * 20)}`, color: timer <= 30 ? '#ff8a80' : '#ffd54f' });
+    const c = this.add.container(10, 46).setDepth(30);
+    const title = text(this, 10, 6, 'OBIETTIVI', 14, '#ffd54f', true);
+    c.add(title);
+    let yy = 26;
+    let wMax = 120;
+    for (const l of lines) {
+      const tx = text(this, 10, yy, l.t, 16, l.color, true).setWordWrapWidth(360);
+      c.add(tx);
+      yy += tx.height + 3;
+      wMax = Math.max(wMax, tx.width);
+    }
+    const bg = this.add.rectangle(0, 0, wMax + 20, yy + 6, PANEL, 0.82).setOrigin(0, 0).setStrokeStyle(1, BORDER);
+    c.addAt(bg, 0);
+    this.objPanel = c;
+    this.objRect = { x: 10, y: 46, w: wMax + 20, h: yy + 6 };
+  }
+
+  private updateDialog(): void {
+    const mission = this.gs.match.mission;
+    const d = mission?.dialog;
+    if (this.overlayKind === 'briefing') return;
+    if (d && d.seq !== this.dialogSeq) {
+      this.dialogSeq = d.seq;
+      const W = this.scale.width;
+      const w = Math.min(640, W - 40);
+      this.dialogSpeaker.setText(d.speaker);
+      this.dialogText.setText(d.text).setWordWrapWidth(w - 28);
+      const h = this.dialogText.height + 44;
+      this.dialogBg.setSize(w, h);
+      const x = (W - w) / 2;
+      const y = Math.max(46, this.panelRect.y - h - 12);
+      this.dialogBox.setPosition(x, y).setVisible(true).setAlpha(0);
+      this.tweens.add({ targets: this.dialogBox, alpha: 1, duration: 250 });
+      this.dialogRect = { x, y, w, h };
+      // nel tutorial il testo resta finché il passo non cambia
+      this.dialogHideAt = mission!.def.id === 'tutorial' ? Infinity : this.time.now + 14000;
+      sfx.play('click');
+    }
+    if (this.dialogBox.visible && this.time.now > this.dialogHideAt) this.dialogBox.setVisible(false);
+  }
+
+  private drawHighlight(): void {
+    const g = this.highlightG;
+    g.clear();
+    const area = this.gs.match.mission?.highlight;
+    if (!area || this.overlay) return;
+    const b = this.minerals.getBounds();
+    const r: Rect =
+      area === 'card'
+        ? this.cardRect
+        : area === 'minimap'
+          ? { x: this.mmRect.x - 4, y: this.mmRect.y - 4, w: this.mmRect.w + 8, h: this.mmRect.h + 8 }
+          : area === 'panel'
+            ? this.panelRect
+            : { x: b.x - 6, y: b.y - 4, w: b.width + 12, h: b.height + 8 };
+    const pulse = 0.5 + 0.5 * Math.sin(this.time.now / 180);
+    g.lineStyle(3, 0xffd54f, 0.4 + 0.6 * pulse);
+    g.strokeRoundedRect(r.x - 3, r.y - 3, r.w + 6, r.h + 6, 8);
   }
 
   // ------------------------------------------------------------ pulsanti
@@ -419,8 +554,11 @@ export class HudScene extends Phaser.Scene {
     const planet = gs.selectedPlanet >= 0 ? gs.world.planets[gs.selectedPlanet] : undefined;
 
     if (mother && own.length === 1) {
-      BUILDABLE_SHIPS.forEach((k, i) => (specs[i] = this.buildSpec(k, BUILD_HOTKEYS[i])));
-      RESEARCH_ORDER.forEach((t, i) => (specs[COLS + i] = this.researchSpec(t, BUILD_HOTKEYS[i])));
+      const rules = gs.world.rules;
+      BUILDABLE_SHIPS.forEach((k, i) => {
+        if (!rules.allowedShips || rules.allowedShips.includes(k)) specs[i] = this.buildSpec(k, BUILD_HOTKEYS[i]);
+      });
+      if (rules.research !== false) RESEARCH_ORDER.forEach((t, i) => (specs[COLS + i] = this.researchSpec(t, BUILD_HOTKEYS[i])));
       mother.queue.slice(0, COLS).forEach((q, i) => {
         const def = gs.world.def(gs.humanId, q.kind);
         const active = i < ECONOMY.productionSlots;
@@ -438,7 +576,7 @@ export class HudScene extends Phaser.Scene {
           },
         };
       });
-    } else if (planet && planet.owner === gs.humanId) {
+    } else if (planet && planet.owner === gs.humanId && gs.world.rules.turrets !== false) {
       const def = gs.world.def(gs.humanId, 'turret');
       const f = gs.world.factions[gs.humanId];
       const room = planet.turretIds.length + planet.queue.length < ECONOMY.turretsPerPlanet;
@@ -573,7 +711,7 @@ export class HudScene extends Phaser.Scene {
       const def = gs.world.def(u.faction, u.kind);
       const own = u.faction === gs.humanId;
       const fac = gs.world.factions[u.faction];
-      this.panelTitle.setText(own ? def.name : `${def.name} (${fac.name})`).setColor(own ? '#ffffff' : '#ff8a80');
+      this.panelTitle.setText(own ? (u.label ?? def.name) : `${u.label ?? def.name} (${fac.name})`).setColor(own ? '#ffffff' : '#ff8a80');
       const lines = [`${def.role}  ·  Armatura ${ARMOR_LABEL[def.armor]}`];
       const frac = u.hp / u.maxHp;
       bar.fillStyle(0x000000, 0.6);
@@ -802,12 +940,25 @@ export class HudScene extends Phaser.Scene {
     const box = c.list[1] as Phaser.GameObjects.Rectangle;
     const spectate = gs.humanId < 0;
     const sr = gs.survivalResult;
-    const titleStr = sr ? 'RESISTENZA TERMINATA' : spectate ? 'FINE SIMULAZIONE' : won ? 'VITTORIA' : 'SCONFITTA';
-    const titleColor = sr ? '#d9a6ff' : spectate ? '#ffd54f' : won ? '#76ff7a' : '#ff5a52';
+    const mr = gs.missionResult;
+    const titleStr = mr
+      ? mr.won
+        ? 'MISSIONE COMPIUTA'
+        : 'MISSIONE FALLITA'
+      : sr
+        ? 'RESISTENZA TERMINATA'
+        : spectate
+          ? 'FINE SIMULAZIONE'
+          : won
+            ? 'VITTORIA'
+            : 'SCONFITTA';
+    const titleColor = mr ? (mr.won ? '#76ff7a' : '#ff5a52') : sr ? '#d9a6ff' : spectate ? '#ffd54f' : won ? '#76ff7a' : '#ff5a52';
     const title = text(this, x + box.width / 2, y + 44, titleStr, sr ? 38 : 44, titleColor, true)
       .setOrigin(0.5)
       .setFontFamily('Orbitron, sans-serif');
-    const subStr = sr
+    const subStr = mr
+      ? `${gs.match.mission!.def.title}  ·  Durata ${fmtTime(w.tick)}`
+      : sr
       ? `Ondata raggiunta: ${sr.wave}  ·  Tempo ${fmtTime(sr.ticks)}  ·  ${DIFFICULTIES[gs.config.difficulty].label}`
       : `Durata ${fmtTime(w.tick)}  ·  ${w.map.name}  ·  IA ${DIFFICULTIES[gs.config.difficulty].label}`;
     const sub = text(this, x + box.width / 2, y + 88, subStr, 18, '#9fb0d8').setOrigin(0.5);
@@ -820,7 +971,11 @@ export class HudScene extends Phaser.Scene {
           : '';
       c.add(text(this, x + box.width / 2, y + 112, recStr, 18, sr.isRecord ? '#ffd54f' : '#7f8db0', true).setOrigin(0.5));
     }
-    const tOff = sr ? 22 : 0;
+    if (mr && (mr.reason || (mr.won && !mr.nextId))) {
+      const line = mr.won ? 'Hai completato la campagna. Grazie per aver giocato!' : mr.reason;
+      c.add(text(this, x + box.width / 2, y + 112, line, 18, mr.won ? '#ffd54f' : '#ff8a80', true).setOrigin(0.5));
+    }
+    const tOff = sr || mr ? 22 : 0;
     const cols = ['Fazione', 'Minerali', 'Costruite', 'Distrutte', 'Perse', 'Pianeti'];
     const colX = [0, 300, 400, 500, 600, 680].map((v) => x + 30 + v * Math.min(1, (box.width - 60) / 740));
     cols.forEach((h, i) => c.add(text(this, colX[i], y + 126 + tOff, h, 17, '#ffd54f', true)));
@@ -835,12 +990,23 @@ export class HudScene extends Phaser.Scene {
       ];
       vals.forEach((v, i) => c.add(text(this, colX[i], y + 158 + tOff + row * 30, v, 18, i === 0 ? '#' + f.color.toString(16).padStart(6, '0') : '#dbe4ff', i === 0)));
     });
-    this.overlayButton(c, x + box.width / 2 - 120, y + box.height - 50, 'RIGIOCA', () => gs.restart());
-    this.overlayButton(c, x + box.width / 2 + 120, y + box.height - 50, 'MENU', () => gs.toMenu());
+    if (mr?.nextId) {
+      const next = mr.nextId;
+      this.overlayButton(c, x + box.width / 2 - 140, y + box.height - 50, 'PROSSIMA MISSIONE', () => gs.startMission(next));
+      this.overlayButton(c, x + box.width / 2 + 170, y + box.height - 50, 'MENU', () => gs.toMenu());
+    } else {
+      this.overlayButton(c, x + box.width / 2 - 120, y + box.height - 50, mr && !mr.won ? 'RIPROVA' : 'RIGIOCA', () => gs.restart());
+      this.overlayButton(c, x + box.width / 2 + 120, y + box.height - 50, 'MENU', () => gs.toMenu());
+    }
   }
 
   /** Tasti gestiti dall'HUD prima dei comandi di gioco. Restituisce true se consumato. */
   handleKey(e: KeyboardEvent): boolean {
+    if (this.overlayKind === 'briefing' && (e.code === 'Enter' || e.code === 'Space' || e.code === 'Escape')) {
+      e.preventDefault();
+      this.closeBriefing();
+      return true;
+    }
     if (this.overlayKind === 'help' && (e.code === 'Escape' || e.code === 'F1')) {
       e.preventDefault();
       this.toggleHelp();
@@ -885,5 +1051,10 @@ export class HudScene extends Phaser.Scene {
       if (hovered?.spec) this.showTooltip(hovered.spec, hovered.bg.x, hovered.bg.y);
     }
     this.drawMinimap();
+    if (gs.match.mission) {
+      this.updateDialog();
+      this.drawHighlight();
+      if (this.cardTimer === 100) this.refreshObjectives();
+    }
   }
 }

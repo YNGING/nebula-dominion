@@ -5,6 +5,8 @@ import { randomMapId } from '../data/mapgen';
 import { getMap } from '../data/maps';
 import { Match, type MatchConfig } from '../game/Match';
 import { getSurvivalRecord, submitSurvivalRecord, type SurvivalRecord } from '../game/records';
+import { CAMPAIGN, missionIndex } from '../game/missions/campaign';
+import { loadProgress, recordWin, saveProgress } from '../game/missions/progress';
 import { InputController } from '../input/InputController';
 import { sfx } from '../render/audio';
 import { music } from '../render/music';
@@ -32,6 +34,10 @@ export class GameScene extends Phaser.Scene {
   speedIndex = 1;
   /** esito della sopravvivenza, calcolato a fine partita */
   survivalResult: { wave: number; ticks: number; isRecord: boolean; record: SurvivalRecord | null } | null = null;
+  /** esito della missione: id della missione successiva se sbloccata */
+  missionResult: { won: boolean; reason: string; nextId: string | null } | null = null;
+  private cameraTravel = 0;
+  private lastScroll = { x: 0, y: 0 };
   private acc = 0;
   private overHandled = false;
 
@@ -50,6 +56,8 @@ export class GameScene extends Phaser.Scene {
     this.overHandled = false;
     this.hud = null;
     this.survivalResult = null;
+    this.missionResult = null;
+    this.cameraTravel = 0;
   }
 
   create(): void {
@@ -62,11 +70,20 @@ export class GameScene extends Phaser.Scene {
     cam.setBounds(-500, -500, this.world.width + 1000, this.world.height + 1000);
     cam.setZoom(0.85);
     const m = this.mothership();
+    const first = this.world.units.find((u) => u.faction === this.humanId);
     if (m) cam.centerOn(m.x, m.y);
+    else if (first) cam.centerOn(first.x + 300, first.y);
     else cam.centerOn(this.world.width / 2, this.world.height / 2);
 
     this.controls = new InputController(this);
     music.setTheme('game');
+    this.lastScroll = { x: cam.scrollX, y: cam.scrollY };
+    if (this.match.mission) {
+      this.match.mission.ui = {
+        selectedKinds: () => this.ownSelected().map((u) => u.kind),
+        cameraTravel: () => this.cameraTravel,
+      };
+    }
     this.scene.launch('Hud');
     this.scene.bringToTop('Hud');
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy());
@@ -151,6 +168,12 @@ export class GameScene extends Phaser.Scene {
     this.scene.restart({ ...this.config, mapId, seed: undefined });
   }
 
+  /** Avvia una missione della campagna. */
+  startMission(id: string): void {
+    this.scene.stop('Hud');
+    this.scene.restart({ mode: 'mission', missionId: id, mapId: '', aiCount: 0, difficulty: 'normal' } satisfies MatchConfig);
+  }
+
   toMenu(): void {
     this.scene.stop('Hud');
     this.scene.start('Menu');
@@ -167,6 +190,17 @@ export class GameScene extends Phaser.Scene {
       if (sv && me >= 0) {
         const isRecord = submitSurvivalRecord(this.config.difficulty, sv.wave, this.world.tick);
         this.survivalResult = { wave: sv.wave, ticks: this.world.tick, isRecord, record: getSurvivalRecord(this.config.difficulty) };
+      }
+      const mission = this.match.mission;
+      if (mission && me >= 0) {
+        const idx = missionIndex(mission.def.id);
+        if (won) saveProgress(recordWin(loadProgress(), idx, mission.def.id, this.world.tick));
+        const next = CAMPAIGN[idx + 1];
+        this.missionResult = {
+          won,
+          reason: this.world.overReason || (won ? '' : 'La Nave Madre è stata distrutta.'),
+          nextId: won && next ? next.id : null,
+        };
       }
       const good = won || !!this.survivalResult?.isRecord || me < 0;
       if (me >= 0) sfx.play(good ? 'victory' : 'defeat');
@@ -230,7 +264,11 @@ export class GameScene extends Phaser.Scene {
     }
     this.selectedUnits();
     if (this.selectedPlanet >= 0 && !this.world.planets[this.selectedPlanet]) this.selectedPlanet = -1;
+    const cam = this.cameras.main;
+    this.cameraTravel += Math.hypot(cam.scrollX - this.lastScroll.x, cam.scrollY - this.lastScroll.y);
+    this.lastScroll = { x: cam.scrollX, y: cam.scrollY };
     this.view.draw(this.paused ? 1 : this.acc / DT, this.paused ? 0 : dt, {
+      beacon: this.match.mission?.beacon ?? null,
       units: this.selection,
       planet: this.selectedPlanet,
     });

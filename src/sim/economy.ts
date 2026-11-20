@@ -8,6 +8,7 @@ import type { World } from './World';
 export function enqueueShip(w: World, m: Unit, kind: UnitKind): string | null {
   if (m.kind !== 'mothership' || m.dead) return 'Struttura non valida';
   if (!BUILDABLE_SHIPS.includes(kind)) return 'Non producibile';
+  if (w.rules.allowedShips && !w.rules.allowedShips.includes(kind)) return 'Non disponibile in questa missione';
   const f = w.factions[m.faction];
   const def = w.def(m.faction, kind);
   if (m.queue.length >= ECONOMY.queueLimit) return 'Coda di produzione piena';
@@ -28,6 +29,7 @@ export function cancelShip(w: World, m: Unit, index: number): void {
 
 export function enqueueTurret(w: World, p: Planet, faction: number): string | null {
   if (p.owner !== faction) return 'Il pianeta non è tuo';
+  if (w.rules.turrets === false) return 'Non disponibile in questa missione';
   const def = w.def(faction, 'turret');
   if (p.turretIds.length + p.queue.length >= ECONOMY.turretsPerPlanet) return 'Massimo 2 torrette per pianeta';
   const f = w.factions[faction];
@@ -106,6 +108,7 @@ export function updateIncome(w: World): void {
 /** Avvia una ricerca sulla Nave Madre. Restituisce un messaggio d'errore o null. */
 export function startResearch(w: World, fid: number, track: ResearchTrack): string | null {
   const f = w.factions[fid];
+  if (w.rules.research === false) return 'Non disponibile in questa missione';
   if (!f?.alive || !w.mothershipOf(fid)) return 'Serve la Nave Madre';
   if (f.researching) return 'È già in corso una ricerca';
   const cost = researchCost(f.doctrine, f.research, track);

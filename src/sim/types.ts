@@ -60,6 +60,10 @@ export interface Unit {
   repairTarget: number;
   lastDamagedTick: number;
   dead: boolean;
+  /** etichetta per le missioni (es. 'flagship') */
+  tag?: string;
+  /** nome mostrato nel pannello al posto del tipo */
+  label?: string;
 }
 
 export interface Asteroid {
@@ -126,6 +130,7 @@ export interface Faction {
   doctrine: DoctrineId | null;
   team: number;
   invader: boolean;
+  noBase: boolean;
   research: ResearchLevels;
   /** ricerca in corso sulla Nave Madre (una alla volta) */
   researching: { track: ResearchTrack; progress: number; cost: number } | null;

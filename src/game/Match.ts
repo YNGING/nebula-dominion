@@ -3,9 +3,11 @@ import { DOCTRINE_ORDER, FACTION_STYLES, INVADER_STYLE, type Difficulty, type Do
 import { getMap } from '../data/maps';
 import { Rng } from '../sim/rng';
 import { World, type FactionSetup } from '../sim/World';
+import { getMission } from './missions/campaign';
+import { MissionController } from './missions/MissionController';
 import { SurvivalController } from './modes/SurvivalController';
 
-export type GameMode = 'skirmish' | 'survival';
+export type GameMode = 'skirmish' | 'survival' | 'mission';
 
 export interface MatchConfig {
   mapId: string;
@@ -18,6 +20,8 @@ export interface MatchConfig {
   doctrine?: DoctrineId;
   /** predefinita: schermaglia */
   mode?: GameMode;
+  /** id della missione (modalità 'mission') */
+  missionId?: string;
 }
 
 /** Una partita: il mondo simulato più i controller (IA, ondate). */
@@ -27,10 +31,29 @@ export class Match {
   readonly humanId: number;
   readonly mode: GameMode;
   readonly survival: SurvivalController | null = null;
+  readonly mission: MissionController | null = null;
 
   constructor(readonly config: MatchConfig) {
-    const map = getMap(config.mapId);
     this.mode = config.mode ?? 'skirmish';
+    if (this.mode === 'mission') {
+      const def = getMission(config.missionId ?? '');
+      this.world = new World({
+        map: def.map(),
+        factions: def.factions,
+        seed: config.seed ?? def.seed,
+        scripted: true,
+        spawnOrder: def.spawnOrder,
+        rules: def.rules,
+      });
+      this.humanId = config.spectate ? -1 : 0;
+      this.ais = this.world.factions
+        .filter((f) => f.controller === 'ai' && !f.invader && !f.noBase)
+        .map((f) => new AIController(this.world, f.id));
+      this.mission = new MissionController(this.world, def);
+      this.mission.start();
+      return;
+    }
+    const map = getMap(config.mapId);
     const seed = config.seed ?? (Date.now() & 0x7fffffff);
     const doctrineRng = new Rng(seed ^ 0x5eed);
     const human = !config.spectate;
@@ -74,6 +97,7 @@ export class Match {
     this.world.events.length = 0;
     for (const ai of this.ais) ai.update();
     this.survival?.update();
+    this.mission?.update();
     this.world.step(true);
   }
 }
