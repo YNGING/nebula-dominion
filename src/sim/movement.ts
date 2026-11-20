@@ -7,7 +7,7 @@ const buf: Unit[] = [];
 
 /** Steering semplice: arrivo morbido, separazione tra navi, ostacoli (pianeti e strutture). */
 export function moveUnit(w: World, u: Unit): void {
-  const def = UNITS[u.kind];
+  const def = w.def(u.faction, u.kind);
   if (def.speed <= 0) {
     // le strutture ruotano lentamente verso il bersaglio
     const t = u.weaponTarget >= 0 ? w.unit(u.weaponTarget) : undefined;

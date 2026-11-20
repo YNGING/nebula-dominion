@@ -395,6 +395,55 @@ function drawIcons(scene: Phaser.Scene): void {
     g.fillStyle(0xc5e1a5, 1);
     g.fillTriangle(8, 24, 20, 14, 20, 34);
   });
+  // icone della ricerca
+  mk('res_weapons', (g) => {
+    g.fillStyle(0xffab40, 1);
+    for (const x of [12, 22, 32]) {
+      g.fillRect(x, 16, 6, 22);
+      g.fillTriangle(x, 16, x + 6, 16, x + 3, 8);
+    }
+    g.fillStyle(0xffe0b2, 1);
+    g.fillRect(10, 38, 30, 3);
+  });
+  mk('res_hulls', (g) => {
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+      pts.push(new Phaser.Math.Vector2(24 + Math.cos(a) * 18, 24 + Math.sin(a) * 18));
+    }
+    g.fillStyle(0x1f4f7a, 1);
+    g.fillPoints(pts, true);
+    g.lineStyle(3, 0x8fd3ff, 1);
+    g.strokePoints(pts, true, true);
+    g.lineStyle(2, 0x8fd3ff, 0.7);
+    g.lineBetween(24, 12, 24, 36);
+    g.lineBetween(14, 24, 34, 24);
+  });
+  mk('res_engines', (g) => {
+    g.fillStyle(0x80d8ff, 1);
+    for (const x of [8, 22]) g.fillTriangle(x, 10, x + 16, 24, x, 38);
+    g.fillStyle(0xffffff, 0.9);
+    g.fillTriangle(8, 18, 16, 24, 8, 30);
+  });
+  mk('res_mining', (g) => {
+    g.fillStyle(0x7ff3ff, 1);
+    g.fillTriangle(24, 6, 36, 22, 12, 22);
+    g.fillStyle(0x3fb8c9, 1);
+    g.fillTriangle(12, 22, 36, 22, 24, 40);
+    g.lineStyle(3, 0xc5e1a5, 1);
+    g.lineBetween(36, 34, 44, 26);
+    g.lineBetween(40, 26, 44, 26);
+    g.lineBetween(44, 26, 44, 30);
+  });
+  mk('res_defense', (g) => {
+    g.fillStyle(0x2a3a5a, 1);
+    g.fillCircle(24, 28, 13);
+    g.lineStyle(3, 0xb0bec5, 1);
+    g.strokeCircle(24, 28, 13);
+    g.fillStyle(0xffd54f, 1);
+    g.fillRect(21, 6, 6, 18);
+    g.fillCircle(24, 28, 5);
+  });
   mk('icon_mineral', (g) => {
     g.fillStyle(0x7ff3ff, 1);
     g.fillTriangle(24, 4, 38, 24, 10, 24);

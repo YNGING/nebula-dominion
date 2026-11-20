@@ -1,14 +1,16 @@
-import { DIFFICULTIES, type Difficulty } from '../data/factions';
+import { DIFFICULTIES, type Difficulty, type DoctrineId } from '../data/factions';
+import { emptyLevels } from '../data/research';
 import type { MapDef } from '../data/maps';
-import { ECONOMY, UNITS, type UnitKind } from '../data/units';
+import { ECONOMY, UNITS, type UnitDef, type UnitKind } from '../data/units';
 import { updateCapture } from './capture';
 import { updateProjectiles, updateRepair, updateWeapon } from './combat';
-import { updateIncome, updateProduction } from './economy';
+import { updateIncome, updateProduction, updateResearch } from './economy';
 import { dist2 } from './math';
 import { moveUnit } from './movement';
 import { updateOrder } from './orders';
 import { Rng } from './rng';
 import { SpatialGrid } from './spatialGrid';
+import { computeTable, type DefTable } from './stats';
 import {
   NEUTRAL,
   type Asteroid,
@@ -25,6 +27,8 @@ export interface FactionSetup {
   color: number;
   controller: 'human' | 'ai';
   difficulty: Difficulty;
+  /** null = nessuna dottrina (statistiche base) */
+  doctrine?: DoctrineId | null;
 }
 
 export interface WorldSetup {
@@ -58,6 +62,7 @@ export class World {
   private byId = new Map<number, Unit>();
   private asteroidById = new Map<number, Asteroid>();
   private motherships: (Unit | null)[] = [];
+  private defTables: DefTable[] = [];
 
   constructor(setup: WorldSetup) {
     this.map = setup.map;
@@ -72,6 +77,9 @@ export class World {
       color: fs.color,
       controller: fs.controller,
       difficulty: fs.difficulty,
+      doctrine: fs.doctrine ?? null,
+      research: emptyLevels(),
+      researching: null,
       minerals: ECONOMY.startMinerals,
       incomeBonus: fs.controller === 'ai' ? DIFFICULTIES[fs.difficulty].incomeBonus : 1,
       alive: true,
@@ -80,6 +88,7 @@ export class World {
       stats: { mined: 0, income: 0, built: 0, lost: 0, killed: 0, planetsCaptured: 0 },
     }));
     this.motherships = this.factions.map(() => null);
+    this.defTables = this.factions.map((f) => computeTable(f.doctrine, f.research));
 
     this.planets = setup.map.planets.map((pd, i) => ({
       id: i,
@@ -179,6 +188,26 @@ export class World {
     return this.planets[id];
   }
 
+  /** Statistiche effettive (dottrina + ricerca) di un tipo di nave per una fazione. */
+  def(f: FactionId, kind: UnitKind): UnitDef {
+    return this.defTables[f]?.[kind] ?? UNITS[kind];
+  }
+
+  /** Ricalcola le statistiche dopo una ricerca e adegua gli hp delle unità esistenti. */
+  refreshDefs(fid: FactionId): void {
+    const f = this.factions[fid];
+    if (!f) return;
+    this.defTables[fid] = computeTable(f.doctrine, f.research);
+    for (const u of this.units) {
+      if (u.faction !== fid || u.dead) continue;
+      const max = this.defTables[fid][u.kind].hp;
+      if (max !== u.maxHp) {
+        u.hp = Math.max(1, u.hp + (max - u.maxHp));
+        u.maxHp = max;
+      }
+    }
+  }
+
   mothershipOf(f: FactionId): Unit | null {
     const m = this.motherships[f];
     return m && !m.dead ? m : null;
@@ -213,7 +242,7 @@ export class World {
   // ---------------------------------------------------------------- entità
 
   spawnUnit(kind: UnitKind, faction: FactionId, x: number, y: number, angle = 0): Unit {
-    const def = UNITS[kind];
+    const def = this.def(faction, kind);
     const u: Unit = {
       id: this.nextId++,
       kind,
@@ -322,6 +351,7 @@ export class World {
     if (!f || !f.alive) return;
     f.alive = false;
     f.eliminatedAt = this.tick;
+    f.researching = null;
     for (const u of this.units) if (u.faction === fid && !u.dead) this.kill(u);
     for (const p of this.planets) {
       if (p.owner === fid) {
@@ -368,6 +398,7 @@ export class World {
 
     this.rebuildGrid();
     updateProduction(this);
+    updateResearch(this);
     for (const u of this.units) if (!u.dead) updateOrder(this, u);
     for (const u of this.units) if (!u.dead) moveUnit(this, u);
     this.rebuildGrid();

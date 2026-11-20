@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { RESEARCH_ORDER } from '../data/research';
 import { BUILDABLE_SHIPS, BUILD_HOTKEYS, UNITS, type UnitKind } from '../data/units';
 import { sfx } from '../render/audio';
 import type { Asteroid, Unit } from '../sim/types';
@@ -297,6 +298,10 @@ export class InputController {
     const planet = gs.selectedPlanet >= 0 ? gs.world.planets[gs.selectedPlanet] : undefined;
     const hk = BUILD_HOTKEYS.indexOf(code.replace('Key', ''));
     if (hk >= 0 && code.startsWith('Key')) {
+      if (e.shiftKey && own.some((u) => u.kind === 'mothership')) {
+        gs.research(RESEARCH_ORDER[hk]);
+        return;
+      }
       if (own.some((u) => u.kind === 'mothership')) {
         gs.build(BUILDABLE_SHIPS[hk] as UnitKind);
         return;

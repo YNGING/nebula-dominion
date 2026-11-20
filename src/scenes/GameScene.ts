@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { RESEARCH, type ResearchTrack } from '../data/research';
 import type { UnitKind } from '../data/units';
 import { Match, type MatchConfig } from '../game/Match';
 import { InputController } from '../input/InputController';
@@ -113,6 +114,10 @@ export class GameScene extends Phaser.Scene {
     if (!this.issue({ type: 'build', structureId: m.id, kind })) sfx.play('click');
   }
 
+  research(track: ResearchTrack): void {
+    if (!this.issue({ type: 'research', track })) sfx.play('click');
+  }
+
   centerOn(x: number, y: number): void {
     this.cameras.main.centerOn(x, y);
   }
@@ -165,6 +170,12 @@ export class GameScene extends Phaser.Scene {
         if (e.faction === me && !this.cameras.main.worldView.contains(e.x, e.y)) {
           this.hud.message('Siamo sotto attacco!', '#ff8a80', { x: e.x, y: e.y });
           sfx.play('alert');
+        }
+        break;
+      case 'research':
+        if (e.faction === me) {
+          this.hud.message(`Ricerca completata: ${RESEARCH[e.track].name} livello ${e.level}`, '#ffd54f');
+          sfx.play('capture');
         }
         break;
       case 'eliminated':

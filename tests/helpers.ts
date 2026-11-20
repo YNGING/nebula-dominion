@@ -1,3 +1,4 @@
+import type { DoctrineId } from '../src/data/factions';
 import type { MapDef } from '../src/data/maps';
 import type { UnitKind } from '../src/data/units';
 import { World } from '../src/sim/World';
@@ -17,12 +18,13 @@ export function emptyMap(extra: Partial<MapDef> = {}): MapDef {
   };
 }
 
-export function sandbox(nFactions = 2, map: MapDef = emptyMap()): World {
+export function sandbox(nFactions = 2, map: MapDef = emptyMap(), doctrines: (DoctrineId | null)[] = []): World {
   const factions = Array.from({ length: nFactions }, (_, i) => ({
     name: `F${i}`,
     color: 0xffffff,
     controller: 'ai' as const,
     difficulty: 'normal' as const,
+    doctrine: doctrines[i] ?? null,
   }));
   return new World({ map, factions, seed: 42, startUnits: false });
 }

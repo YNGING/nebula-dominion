@@ -1,15 +1,18 @@
 import Phaser from 'phaser';
-import { DIFFICULTIES } from '../data/factions';
+import { DIFFICULTIES, DOCTRINES } from '../data/factions';
+import { MAX_RESEARCH_LEVEL, RESEARCH, RESEARCH_ORDER, type ResearchTrack } from '../data/research';
 import { ARMOR_LABEL, BUILDABLE_SHIPS, BUILD_HOTKEYS, ECONOMY, UNITS, type UnitKind } from '../data/units';
 import { sfx } from '../render/audio';
 import { shipKey } from '../render/textures';
+import { researchCost, researchTime } from '../sim/stats';
 import { TICK_RATE, type Unit } from '../sim/types';
 import type { GameScene } from './GameScene';
 
 const FONT = 'Rajdhani, sans-serif';
 const PANEL = 0x0a0f22;
 const BORDER = 0x2b3d6b;
-const BTN = 56;
+const BTN = 52;
+const ROWS = 3;
 const GAP = 6;
 const COLS = 5;
 
@@ -18,6 +21,8 @@ interface ButtonSpec {
   iconScale?: number;
   hotkey?: string;
   label?: string;
+  /** livello della ricerca, mostrato in alto a destra */
+  pips?: string;
   enabled: boolean;
   progress?: number;
   title: string;
@@ -30,6 +35,7 @@ interface CardButton {
   icon: Phaser.GameObjects.Image;
   hotkey: Phaser.GameObjects.Text;
   label: Phaser.GameObjects.Text;
+  pips: Phaser.GameObjects.Text;
   bar: Phaser.GameObjects.Rectangle;
   spec: ButtonSpec | null;
 }
@@ -137,7 +143,7 @@ export class HudScene extends Phaser.Scene {
     this.panelTitle = text(this, 0, 0, '', 20, '#ffffff', true);
     this.panelBody = text(this, 0, 0, '', 16, '#b8c4e6').setLineSpacing(2);
 
-    for (let i = 0; i < COLS * 2; i++) this.buttons.push(this.createButton());
+    for (let i = 0; i < COLS * ROWS; i++) this.buttons.push(this.createButton());
 
     this.tooltipBg = this.add.rectangle(0, 0, 10, 10, 0x070b1a, 0.96).setOrigin(0, 0).setStrokeStyle(1, BORDER);
     this.tooltipText = text(this, 10, 8, '', 16, '#dbe4ff').setWordWrapWidth(300).setLineSpacing(2);
@@ -192,7 +198,7 @@ export class HudScene extends Phaser.Scene {
     this.mmRect = { x: 10, y: H - mmH - 10, w: mmW, h: mmH };
 
     const cardW = COLS * BTN + (COLS - 1) * GAP + 16;
-    const cardH = 2 * BTN + GAP + 16;
+    const cardH = ROWS * BTN + (ROWS - 1) * GAP + 16;
     this.cardRect = { x: W - cardW - 10, y: H - cardH - 10, w: cardW, h: cardH };
     const px = this.mmRect.x + this.mmRect.w + 10;
     const pw = Math.max(160, this.cardRect.x - 10 - px);
@@ -235,6 +241,7 @@ export class HudScene extends Phaser.Scene {
       b.icon.setPosition(bx + BTN / 2, by + BTN / 2 - 3);
       b.hotkey.setPosition(bx + 4, by + 2);
       b.label.setPosition(bx + BTN - 4, by + BTN - 2);
+      b.pips.setPosition(bx + 4, by + BTN - 2);
       b.bar.setPosition(bx + 2, by + BTN - 5);
     });
 
@@ -265,8 +272,9 @@ export class HudScene extends Phaser.Scene {
     const icon = this.add.image(0, 0, 'icon_stop');
     const hotkey = text(this, 0, 0, '', 14, '#ffd54f', true);
     const label = text(this, 0, 0, '', 13, '#7ff3ff', true).setOrigin(1, 1);
+    const pips = text(this, 0, 0, '', 12, '#ffd54f', true).setOrigin(0, 1);
     const bar = this.add.rectangle(0, 0, BTN - 4, 3, 0x76ff7a, 1).setOrigin(0, 0);
-    const b: CardButton = { bg, icon, hotkey, label, bar, spec: null };
+    const b: CardButton = { bg, icon, hotkey, label, pips, bar, spec: null };
     bg.on('pointerover', () => {
       if (!b.spec) return;
       bg.setStrokeStyle(1, 0x7fa6ff);
@@ -292,6 +300,7 @@ export class HudScene extends Phaser.Scene {
     b.icon.setVisible(vis);
     b.hotkey.setVisible(vis);
     b.label.setVisible(vis);
+    b.pips.setVisible(vis && spec?.pips !== undefined).setText(spec?.pips ?? '');
     b.bar.setVisible(vis && spec?.progress !== undefined);
     if (!spec) {
       b.bg.disableInteractive();
@@ -321,13 +330,13 @@ export class HudScene extends Phaser.Scene {
 
   private buildSpec(kind: UnitKind, hk: string): ButtonSpec {
     const gs = this.gs;
-    const def = UNITS[kind];
+    const def = gs.world.def(gs.humanId, kind);
     const f = gs.world.factions[gs.humanId];
     const supplyOk = gs.world.supplyUsed(gs.humanId) + def.supply <= gs.world.supplyCap(gs.humanId);
     const wp = def.weapon;
     const lines = [def.description, '', `Costo: ${def.cost} minerali  ·  Flotta: ${def.supply}  ·  Tempo: ${def.buildTime}s`];
-    lines.push(`Scafo: ${def.hp}  ·  Armatura ${ARMOR_LABEL[def.armor]}  ·  Velocità ${def.speed}`);
-    if (wp) lines.push(`${wp.name}: ${Math.round((wp.damage / wp.cooldown) * 10) / 10} danni/s, gittata ${wp.range}`);
+    lines.push(`Scafo: ${def.hp}  ·  Armatura ${ARMOR_LABEL[def.armor]}  ·  Velocità ${Math.round(def.speed)}`);
+    if (wp) lines.push(`${wp.name}: ${Math.round((wp.damage / wp.cooldown) * 10) / 10} danni/s, gittata ${Math.round(wp.range)}`);
     if (!supplyOk) lines.push('', 'Limite flotta raggiunto: conquista altri pianeti.');
     return {
       icon: shipKey(kind, gs.humanId),
@@ -341,19 +350,62 @@ export class HudScene extends Phaser.Scene {
     };
   }
 
+  private researchSpec(track: ResearchTrack, hk: string): ButtonSpec {
+    const gs = this.gs;
+    const f = gs.world.factions[gs.humanId];
+    const rd = RESEARCH[track];
+    const lvl = f.research[track];
+    const cost = researchCost(f.doctrine, f.research, track);
+    const active = f.researching?.track === track ? f.researching : null;
+    const pips = '●'.repeat(lvl) + '○'.repeat(MAX_RESEARCH_LEVEL - lvl);
+    const pct = Math.round(rd.perLevel * 100);
+    const lines = [`${rd.description}: +${pct}% per livello.`, '', `Livello attuale: ${lvl}/${MAX_RESEARCH_LEVEL} (+${pct * lvl}%)`];
+    if (active) {
+      const total = researchTime(f.research, track);
+      lines.push('', `In corso: ${Math.ceil(total - active.progress)}s rimanenti.`, 'Clicca per annullare e recuperare i minerali.');
+      return {
+        icon: `res_${track}`,
+        hotkey: `⇧${hk}`,
+        pips,
+        label: `${Math.ceil(total - active.progress)}s`,
+        enabled: true,
+        progress: active.progress / total,
+        title: `${rd.name} — livello ${lvl + 1} in ricerca`,
+        body: lines.join('\n'),
+        onClick: () => {
+          gs.issue({ type: 'cancelResearch' });
+          sfx.play('click');
+        },
+      };
+    }
+    if (cost === null) lines.push('', 'Livello massimo raggiunto.');
+    else lines.push(`Prossimo livello: ${cost} minerali, ${researchTime(f.research, track)}s.`, '', 'Una ricerca alla volta, senza occupare la produzione.');
+    return {
+      icon: `res_${track}`,
+      hotkey: `⇧${hk}`,
+      pips,
+      label: cost === null ? 'MAX' : String(cost),
+      enabled: cost !== null && !f.researching && f.minerals >= cost,
+      title: `Ricerca: ${rd.name}`,
+      body: lines.join('\n'),
+      onClick: () => gs.research(track),
+    };
+  }
+
   private refreshCard(): void {
     const gs = this.gs;
-    const specs: (ButtonSpec | null)[] = new Array(COLS * 2).fill(null);
+    const specs: (ButtonSpec | null)[] = new Array(COLS * ROWS).fill(null);
     const own = gs.ownSelected();
     const mother = own.find((u) => u.kind === 'mothership');
     const planet = gs.selectedPlanet >= 0 ? gs.world.planets[gs.selectedPlanet] : undefined;
 
     if (mother && own.length === 1) {
       BUILDABLE_SHIPS.forEach((k, i) => (specs[i] = this.buildSpec(k, BUILD_HOTKEYS[i])));
+      RESEARCH_ORDER.forEach((t, i) => (specs[COLS + i] = this.researchSpec(t, BUILD_HOTKEYS[i])));
       mother.queue.slice(0, COLS).forEach((q, i) => {
-        const def = UNITS[q.kind];
+        const def = gs.world.def(gs.humanId, q.kind);
         const active = i < ECONOMY.productionSlots;
-        specs[COLS + i] = {
+        specs[COLS * 2 + i] = {
           icon: shipKey(q.kind, gs.humanId),
           iconScale: this.shipIconScale(q.kind),
           enabled: active,
@@ -368,7 +420,7 @@ export class HudScene extends Phaser.Scene {
         };
       });
     } else if (planet && planet.owner === gs.humanId) {
-      const def = UNITS.turret;
+      const def = gs.world.def(gs.humanId, 'turret');
       const f = gs.world.factions[gs.humanId];
       const room = planet.turretIds.length + planet.queue.length < ECONOMY.turretsPerPlanet;
       specs[0] = {
@@ -485,16 +537,21 @@ export class HudScene extends Phaser.Scene {
     }
     if (units.length === 0) {
       this.panelTitle.setText('').setColor('#ffffff');
+      const doc = gs.humanId >= 0 ? gs.world.factions[gs.humanId].doctrine : null;
       this.panelBody.setText(
         gs.humanId >= 0
-          ? ['Nessuna selezione.', 'Clicca o trascina per selezionare le navi. C = Nave Madre, Z = flotta, X = minatori.']
+          ? [
+              'Nessuna selezione.',
+              'Clicca o trascina per selezionare le navi. C = Nave Madre, Z = flotta, X = minatori.',
+              ...(doc ? ['', `Dottrina ${DOCTRINES[doc].name}: ${DOCTRINES[doc].traits.join(', ')}`] : []),
+            ]
           : ['Modalità spettatore'],
       );
       return;
     }
     if (units.length === 1) {
       const u = units[0];
-      const def = UNITS[u.kind];
+      const def = gs.world.def(u.faction, u.kind);
       const own = u.faction === gs.humanId;
       const fac = gs.world.factions[u.faction];
       this.panelTitle.setText(own ? def.name : `${def.name} (${fac.name})`).setColor(own ? '#ffffff' : '#ff8a80');
@@ -505,10 +562,14 @@ export class HudScene extends Phaser.Scene {
       bar.fillStyle(frac > 0.6 ? 0x66ff88 : frac > 0.3 ? 0xffd54f : 0xff5252, 1);
       bar.fillRect(r.x + 12, r.y + 36, Math.min(220, r.w - 24) * frac, 10);
       lines.unshift(`Scafo ${Math.ceil(u.hp)} / ${u.maxHp}`);
-      if (def.weapon) lines.push(`${def.weapon.name}: ${Math.round((def.weapon.damage / def.weapon.cooldown) * 10) / 10} danni/s  ·  gittata ${def.weapon.range}`);
+      if (def.weapon) lines.push(`${def.weapon.name}: ${Math.round((def.weapon.damage / def.weapon.cooldown) * 10) / 10} danni/s  ·  gittata ${Math.round(def.weapon.range)}`);
       if (def.cargo) lines.push(`Carico: ${Math.floor(u.cargo)} / ${def.cargo}  ·  ${this.minerState(u)}`);
       if (def.repairRate) lines.push(`Riparazione: ${def.repairRate} punti/s entro ${def.repairRange}`);
-      if (u.kind === 'mothership' && own) lines.push(`In coda: ${u.queue.length}/${ECONOMY.queueLimit}  ·  Click destro: punto di raccolta`);
+      if (u.kind === 'mothership' && own) {
+        lines.push(`In coda: ${u.queue.length}/${ECONOMY.queueLimit}  ·  Click destro: punto di raccolta`);
+        lines.push('Ricerca: ' + RESEARCH_ORDER.map((t) => `${RESEARCH[t].name} ${fac.research[t]}`).join(' · '));
+      }
+      if (u.kind === 'mothership' && fac.doctrine) lines.push(`Dottrina ${DOCTRINES[fac.doctrine].name}: ${DOCTRINES[fac.doctrine].traits.join(', ')}`);
       this.panelBody.setText(['', ...lines]);
       return;
     }
@@ -664,7 +725,7 @@ export class HudScene extends Phaser.Scene {
     this.pausedBeforeHelp = this.gs.paused;
     if (!this.gs.world.over) this.gs.paused = true;
     this.overlayKind = 'help';
-    const { c, x, y } = this.makeOverlay(760, 450);
+    const { c, x, y } = this.makeOverlay(780, 490);
     const title = text(this, x + 24, y + 18, 'COMANDI', 26, '#ffd54f', true).setFontFamily('Orbitron, sans-serif');
     const left = [
       'Click sinistro — seleziona (Shift: aggiungi)',
@@ -679,6 +740,7 @@ export class HudScene extends Phaser.Scene {
     ];
     const right = [
       'Q W E R T — produci (Nave Madre selezionata)',
+      'Shift + Q W E R T — ricerca (Nave Madre selezionata)',
       'Q — torretta (pianeta tuo selezionato)',
       'Frecce / bordi schermo / tasto centrale — camera',
       'Rotella — zoom     Spazio — centra la selezione',
@@ -717,7 +779,7 @@ export class HudScene extends Phaser.Scene {
     this.overlayKind = 'over';
     const gs = this.gs;
     const w = gs.world;
-    const { c, x, y } = this.makeOverlay(720, 460);
+    const { c, x, y } = this.makeOverlay(800, 460);
     const box = c.list[1] as Phaser.GameObjects.Rectangle;
     const spectate = gs.humanId < 0;
     const titleStr = spectate ? 'FINE SIMULAZIONE' : won ? 'VITTORIA' : 'SCONFITTA';
@@ -734,11 +796,11 @@ export class HudScene extends Phaser.Scene {
     ).setOrigin(0.5);
     c.add([title, sub]);
     const cols = ['Fazione', 'Minerali', 'Costruite', 'Distrutte', 'Perse', 'Pianeti'];
-    const colX = [0, 190, 290, 390, 490, 570].map((v) => x + 30 + v * Math.min(1, (box.width - 60) / 660));
+    const colX = [0, 300, 400, 500, 600, 680].map((v) => x + 30 + v * Math.min(1, (box.width - 60) / 740));
     cols.forEach((h, i) => c.add(text(this, colX[i], y + 126, h, 17, '#ffd54f', true)));
     w.factions.forEach((f, row) => {
       const vals = [
-        f.name + (f.alive ? '' : ' ✝'),
+        f.name + (f.doctrine ? ` (${DOCTRINES[f.doctrine].name})` : '') + (f.alive ? '' : ' ✝'),
         String(Math.round(f.stats.mined + f.stats.income)),
         String(f.stats.built),
         String(f.stats.killed),

@@ -1,4 +1,5 @@
-import type { Difficulty } from '../data/factions';
+import type { Difficulty, DoctrineId } from '../data/factions';
+import type { ResearchLevels, ResearchTrack } from '../data/research';
 import type { UnitKind, WeaponKind } from '../data/units';
 
 export type FactionId = number;
@@ -122,6 +123,10 @@ export interface Faction {
   color: number;
   controller: 'human' | 'ai';
   difficulty: Difficulty;
+  doctrine: DoctrineId | null;
+  research: ResearchLevels;
+  /** ricerca in corso sulla Nave Madre (una alla volta) */
+  researching: { track: ResearchTrack; progress: number; cost: number } | null;
   minerals: number;
   incomeBonus: number;
   alive: boolean;
@@ -138,4 +143,5 @@ export type GameEvent =
   | { t: 'captured'; planetId: number; faction: FactionId; prev: FactionId }
   | { t: 'underAttack'; faction: FactionId; x: number; y: number }
   | { t: 'eliminated'; faction: FactionId }
+  | { t: 'research'; faction: FactionId; track: ResearchTrack; level: number }
   | { t: 'gameOver'; winner: FactionId | null };

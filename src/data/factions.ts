@@ -1,4 +1,65 @@
+import type { UnitKind } from './units';
+
 export type Difficulty = 'easy' | 'normal' | 'hard';
+
+export type DoctrineId = 'engineering' | 'armor' | 'swarm' | 'arsenal';
+
+/** Modificatori di una dottrina: i moltiplicatori valgono 1 se assenti. */
+export interface DoctrineMods {
+  /** punti scafo delle navi (non delle strutture) */
+  hp?: number;
+  /** velocità e accelerazione delle navi */
+  speed?: number;
+  mineRate?: number;
+  /** gittata di tutte le armi */
+  range?: number;
+  researchCost?: number;
+  costOverride?: Partial<Record<UnitKind, number>>;
+  costMult?: Partial<Record<UnitKind, number>>;
+  buildTimeMult?: Partial<Record<UnitKind, number>>;
+}
+
+export interface DoctrineDef {
+  id: DoctrineId;
+  name: string;
+  motto: string;
+  /** righe di descrizione per menu e HUD */
+  traits: string[];
+  mods: DoctrineMods;
+}
+
+export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
+  engineering: {
+    id: 'engineering',
+    name: 'Ingegneria',
+    motto: 'Economia solida e difese a buon prezzo',
+    traits: ['Estrazione +30%', 'Torrette −30% costo'],
+    mods: { mineRate: 1.3, costMult: { turret: 0.7 } },
+  },
+  armor: {
+    id: 'armor',
+    name: 'Corazze',
+    motto: 'Flotte lente ma difficili da abbattere',
+    traits: ['Scafi +15%', 'Corazzate costruite il 20% più in fretta', 'Velocità −5%'],
+    mods: { hp: 1.15, speed: 0.95, buildTimeMult: { battleship: 0.8 } },
+  },
+  swarm: {
+    id: 'swarm',
+    name: 'Sciame',
+    motto: 'Numeri e velocità',
+    traits: ['Caccia a 50 minerali', 'Velocità +8%', 'Scafi −5%'],
+    mods: { speed: 1.08, hp: 0.95, costOverride: { fighter: 50 } },
+  },
+  arsenal: {
+    id: 'arsenal',
+    name: 'Arsenale',
+    motto: 'Colpire da lontano, ricercare in fretta',
+    traits: ['Gittata +15%', 'Ricerca −30% costo'],
+    mods: { range: 1.15, researchCost: 0.7 },
+  },
+};
+
+export const DOCTRINE_ORDER: DoctrineId[] = ['engineering', 'armor', 'swarm', 'arsenal'];
 
 export interface FactionStyle {
   name: string;
@@ -32,6 +93,8 @@ export interface DifficultyParams {
   expandSquad: number;
   /** secondi prima della prima ondata d'attacco */
   attackDelay: number;
+  /** l'IA svolge ricerche */
+  research: boolean;
 }
 
 export const DIFFICULTIES: Record<Difficulty, DifficultyParams> = {
@@ -47,6 +110,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyParams> = {
     counter: false,
     expandSquad: 2,
     attackDelay: 300,
+    research: false,
   },
   normal: {
     label: 'Normale',
@@ -60,6 +124,7 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyParams> = {
     counter: true,
     expandSquad: 3,
     attackDelay: 180,
+    research: true,
   },
   hard: {
     label: 'Difficile',
@@ -73,5 +138,6 @@ export const DIFFICULTIES: Record<Difficulty, DifficultyParams> = {
     counter: true,
     expandSquad: 3,
     attackDelay: 120,
+    research: true,
   },
 };

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { DIFFICULTIES, FACTION_STYLES, type Difficulty } from '../data/factions';
+import { DIFFICULTIES, DOCTRINES, DOCTRINE_ORDER, FACTION_STYLES, type Difficulty } from '../data/factions';
 import { MAPS } from '../data/maps';
 import { BUILDABLE_SHIPS, UNITS } from '../data/units';
 import type { MatchConfig } from '../game/Match';
@@ -14,10 +14,11 @@ interface Settings {
   mapIndex: number;
   aiCount: number;
   diff: number;
+  doctrine: number;
 }
 
 function loadSettings(): Settings {
-  const def = { mapIndex: 0, aiCount: 1, diff: 1 };
+  const def = { mapIndex: 0, aiCount: 1, diff: 1, doctrine: 0 };
   try {
     const raw = localStorage.getItem('nd-settings');
     if (!raw) return def;
@@ -26,6 +27,7 @@ function loadSettings(): Settings {
       mapIndex: Phaser.Math.Clamp(Number(s.mapIndex) || 0, 0, MAPS.length - 1),
       aiCount: Phaser.Math.Clamp(Number(s.aiCount) || 1, 1, 3),
       diff: Phaser.Math.Clamp(Number(s.diff ?? 1), 0, 2),
+      doctrine: Phaser.Math.Clamp(Number(s.doctrine ?? 0), 0, DOCTRINE_ORDER.length - 1),
     };
   } catch {
     return def;
@@ -102,7 +104,7 @@ export class MenuScene extends Phaser.Scene {
         .text(cx, y, 'Estrai. Conquista. Domina la nebulosa.', { fontFamily: FONT, fontSize: '22px', color: '#8fa6d6' })
         .setOrigin(0.5),
     );
-    y += small ? 50 : 80;
+    y += small ? 44 : 64;
 
     const map = MAPS[this.settings.mapIndex];
     const maxAi = map.maxPlayers - 1;
@@ -133,9 +135,18 @@ export class MenuScene extends Phaser.Scene {
           this.settings.diff = Phaser.Math.Clamp(this.settings.diff + d, 0, 2);
         },
       },
+      {
+        label: 'LA TUA DOTTRINA',
+        value: DOCTRINES[DOCTRINE_ORDER[this.settings.doctrine]].name,
+        detail: DOCTRINES[DOCTRINE_ORDER[this.settings.doctrine]].traits.join('  ·  '),
+        change: (d) => {
+          const n = DOCTRINE_ORDER.length;
+          this.settings.doctrine = (this.settings.doctrine + d + n) % n;
+        },
+      },
     ];
 
-    const rowH = small ? 62 : 76;
+    const rowH = small ? 66 : 80;
     for (const row of rows) {
       c.add(this.add.text(cx, y, row.label, { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold', color: '#ffd54f' }).setOrigin(0.5));
       c.add(this.add.text(cx, y + 26, row.value, { fontFamily: TITLE_FONT, fontSize: '22px', color: '#ffffff' }).setOrigin(0.5));
@@ -167,10 +178,10 @@ export class MenuScene extends Phaser.Scene {
     const n = this.settings.aiCount + 1;
     const chips = FACTION_STYLES.slice(0, n).map((s, i) => (i === 0 ? `■ Tu` : `■ ${s.name}`));
     const chipText = this.add.text(cx, y, '', { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold' }).setOrigin(0.5);
-    chipText.setText(chips.join('    '));
+    chipText.setText(chips.join('    ') + '   (dottrine IA casuali)');
     chipText.setColor('#cfd8e8');
     c.add(chipText);
-    y += small ? 40 : 56;
+    y += small ? 36 : 48;
 
     const btn = this.add
       .rectangle(cx, y, 300, 58, 0x1b2a55, 1)
@@ -215,6 +226,7 @@ export class MenuScene extends Phaser.Scene {
       mapId: MAPS[this.settings.mapIndex].id,
       aiCount: this.settings.aiCount,
       difficulty: DIFFS[this.settings.diff],
+      doctrine: DOCTRINE_ORDER[this.settings.doctrine],
     };
     this.saveSettings();
     this.scene.start('Game', cfg);

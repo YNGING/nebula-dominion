@@ -257,6 +257,11 @@ export class WorldRenderer {
         }
         break;
       }
+      case 'research': {
+        const m = this.world.mothershipOf(e.faction);
+        if (m && e.faction === this.humanId) this.ringPulse(m.x, m.y, m.radius * 3, 0xffd54f, 800, 0.9);
+        break;
+      }
       case 'captured': {
         const p = this.world.planets[e.planetId];
         this.ringPulse(p.x, p.y, p.radius * 2.2, this.colorOf(e.faction), 900, 0.9);

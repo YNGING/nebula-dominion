@@ -60,10 +60,16 @@ try {
   await page.screenshot({ path: `${OUT}/2-start.png` });
 
   // seleziona la Nave Madre e produce un caccia e un minatore
+  await page.evaluate(() => (window.__game.scene.getScene('Game').world.factions[0].minerals = 1000));
   await page.keyboard.press('KeyC');
   await sleep(200);
   await page.keyboard.press('KeyW');
   await page.keyboard.press('KeyQ');
+  await page.keyboard.press('Shift+KeyQ');
+  await sleep(300);
+  const researching = await page.evaluate(() => window.__game.scene.getScene('Game').world.factions[0].researching?.track ?? null);
+  if (researching !== 'weapons') errors.push(`ricerca non avviata con Shift+Q (${researching})`);
+  await page.mouse.move(1290, 790);
   await sleep(300);
   await page.screenshot({ path: `${OUT}/3-production.png` });
 
@@ -91,6 +97,8 @@ try {
       units: w.units.length,
       mine: w.units.filter((u) => u.faction === 0).map((u) => u.kind),
       minerals: Math.round(w.factions[0].minerals),
+      doctrines: w.factions.map((f) => f.doctrine),
+      research: w.factions[0].researching,
     };
   });
 

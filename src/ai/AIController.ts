@@ -1,5 +1,7 @@
 import { DIFFICULTIES, type DifficultyParams } from '../data/factions';
+import { RESEARCH_ORDER } from '../data/research';
 import { ECONOMY, UNITS, type UnitKind } from '../data/units';
+import { researchCost } from '../sim/stats';
 import { issueCommand, type Command } from '../sim/commands';
 import { dist, dist2 } from '../sim/math';
 import { TICK_RATE, type FactionId, type Planet, type Unit } from '../sim/types';
@@ -62,6 +64,7 @@ export class AIController {
     this.manageMiners(mother, miners);
     this.manageProduction(mother, miners, army);
     this.manageTurrets(mother);
+    this.manageResearch(army);
 
     const threat = this.findThreat(mother);
     if (threat) this.defend(threat, army);
@@ -93,13 +96,13 @@ export class AIController {
     if (miners.length + queuedMiners < this.minerTarget() && w.asteroids.some((a) => a.amount > 0)) {
       // prima i minatori, ma senza restare del tutto indifesi
       const needArmy = miners.length >= 5 && army.length < 3;
-      if (f.minerals >= UNITS.miner.cost && !needArmy) {
+      if (f.minerals >= w.def(this.fid, 'miner').cost && !needArmy) {
         this.cmd({ type: 'build', structureId: mother.id, kind: 'miner' });
         return;
       }
     }
     if (!this.nextKind) this.nextKind = this.chooseShip(army);
-    const def = UNITS[this.nextKind];
+    const def = w.def(this.fid, this.nextKind);
     if (f.minerals < def.cost) {
       // se il risparmio dura troppo, ripiega su una nave più economica
       if (this.nextKind === 'battleship' && w.rng.next() < 0.1) this.nextKind = null;
@@ -165,6 +168,23 @@ export class AIController {
       }
     }
     if (best) this.cmd({ type: 'buildTurret', planetId: best.id });
+  }
+
+  /** Ricerca con i minerali in eccesso, solo se l'esercito non è sguarnito. */
+  private manageResearch(army: Unit[]): void {
+    if (!this.params.research) return;
+    const w = this.w;
+    const f = w.factions[this.fid];
+    if (f.researching || w.tick < 120 * 20 || this.armySupply(army) < 6) return;
+    // priorità: armi, scafi, estrazione, motori, difese; prima i livelli bassi
+    const priority = ['weapons', 'hulls', 'mining', 'engines', 'defense'] as const;
+    const options = RESEARCH_ORDER.filter((t) => researchCost(f.doctrine, f.research, t) !== null).sort(
+      (a, b) => f.research[a] - f.research[b] || priority.indexOf(a) - priority.indexOf(b),
+    );
+    const track = options[0];
+    if (!track) return;
+    const cost = researchCost(f.doctrine, f.research, track)!;
+    if (f.minerals >= cost + 150) this.cmd({ type: 'research', track });
   }
 
   // ------------------------------------------------------------ militare

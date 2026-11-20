@@ -1,5 +1,6 @@
+import type { ResearchTrack } from '../data/research';
 import { UNITS, type UnitKind } from '../data/units';
-import { cancelShip, cancelTurret, enqueueShip, enqueueTurret } from './economy';
+import { cancelResearch, cancelShip, cancelTurret, enqueueShip, enqueueTurret, startResearch } from './economy';
 import { dist2 } from './math';
 import type { FactionId, Order, Unit } from './types';
 import type { World } from './World';
@@ -16,7 +17,9 @@ export type Command =
   | { type: 'cancel'; structureId: number; index: number }
   | { type: 'rally'; structureId: number; x: number; y: number }
   | { type: 'buildTurret'; planetId: number }
-  | { type: 'cancelTurret'; planetId: number; index: number };
+  | { type: 'cancelTurret'; planetId: number; index: number }
+  | { type: 'research'; track: ResearchTrack }
+  | { type: 'cancelResearch' };
 
 /** Unità mobili della fazione tra gli id indicati. */
 function ownShips(w: World, f: FactionId, ids: number[]): Unit[] {
@@ -145,5 +148,10 @@ export function issueCommand(w: World, f: FactionId, cmd: Command): string | nul
       if (p && p.owner === f) cancelTurret(w, p, cmd.index);
       return null;
     }
+    case 'research':
+      return startResearch(w, f, cmd.track);
+    case 'cancelResearch':
+      cancelResearch(w, f);
+      return null;
   }
 }

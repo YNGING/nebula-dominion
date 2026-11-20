@@ -30,7 +30,7 @@ function pickTarget(w: World, u: Unit, wp: WeaponDef): Unit | undefined {
 }
 
 export function updateWeapon(w: World, u: Unit): void {
-  const def = UNITS[u.kind];
+  const def = w.def(u.faction, u.kind);
   const wp = def.weapon;
   if (!wp) return;
   if (u.cooldown > 0) u.cooldown -= DT;
@@ -142,7 +142,7 @@ function explode(w: World, p: Projectile, wp: WeaponDef, x: number, y: number, d
 
 /** Le Navi Supporto riparano l'alleato più danneggiato a portata. */
 export function updateRepair(w: World, u: Unit): void {
-  const def = UNITS[u.kind];
+  const def = w.def(u.faction, u.kind);
   if (!def.repairRate || !def.repairRange) return;
   let t = u.repairTarget >= 0 ? w.unit(u.repairTarget) : undefined;
   const r2 = def.repairRange * def.repairRange;

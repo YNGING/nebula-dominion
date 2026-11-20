@@ -1,4 +1,4 @@
-import { AGGRO_EXTRA, LEASH, UNITS, type UnitDef } from '../data/units';
+import { AGGRO_EXTRA, LEASH, type UnitDef } from '../data/units';
 import { DT, type Unit } from './types';
 import { dist, dist2 } from './math';
 import type { World } from './World';
@@ -50,7 +50,7 @@ function arrived(u: Unit, x: number, y: number): boolean {
 
 /** Decide dove deve andare l'unità in questo tick in base al suo ordine. */
 export function updateOrder(w: World, u: Unit): void {
-  const def = UNITS[u.kind];
+  const def = w.def(u.faction, u.kind);
   u.hasDest = false;
   if (def.structure) return;
   const o = u.order;

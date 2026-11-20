@@ -1,4 +1,6 @@
-import { BUILDABLE_SHIPS, ECONOMY, UNITS, type UnitKind } from '../data/units';
+import { RESEARCH, type ResearchTrack } from '../data/research';
+import { BUILDABLE_SHIPS, ECONOMY, type UnitKind } from '../data/units';
+import { researchCost, researchTime } from './stats';
 import { DT, type Planet, type Unit } from './types';
 import type { World } from './World';
 
@@ -7,7 +9,7 @@ export function enqueueShip(w: World, m: Unit, kind: UnitKind): string | null {
   if (m.kind !== 'mothership' || m.dead) return 'Struttura non valida';
   if (!BUILDABLE_SHIPS.includes(kind)) return 'Non producibile';
   const f = w.factions[m.faction];
-  const def = UNITS[kind];
+  const def = w.def(m.faction, kind);
   if (m.queue.length >= ECONOMY.queueLimit) return 'Coda di produzione piena';
   if (f.minerals < def.cost) return 'Minerali insufficienti';
   if (w.supplyUsed(f.id) + def.supply > w.supplyCap(f.id)) return 'Limite flotta raggiunto: conquista altri pianeti';
@@ -21,12 +23,12 @@ export function cancelShip(w: World, m: Unit, index: number): void {
   const item = m.queue[index];
   if (!item) return;
   m.queue.splice(index, 1);
-  w.factions[m.faction].minerals += UNITS[item.kind].cost;
+  w.factions[m.faction].minerals += w.def(m.faction, item.kind).cost;
 }
 
 export function enqueueTurret(w: World, p: Planet, faction: number): string | null {
   if (p.owner !== faction) return 'Il pianeta non è tuo';
-  const def = UNITS.turret;
+  const def = w.def(faction, 'turret');
   if (p.turretIds.length + p.queue.length >= ECONOMY.turretsPerPlanet) return 'Massimo 2 torrette per pianeta';
   const f = w.factions[faction];
   if (f.minerals < def.cost) return 'Minerali insufficienti';
@@ -39,7 +41,7 @@ export function cancelTurret(w: World, p: Planet, index: number): void {
   const item = p.queue[index];
   if (!item || p.owner < 0) return;
   p.queue.splice(index, 1);
-  w.factions[p.owner].minerals += UNITS.turret.cost;
+  w.factions[p.owner].minerals += w.def(p.owner, 'turret').cost;
 }
 
 /** Posizioni fisse delle torrette attorno a un pianeta. */
@@ -54,10 +56,10 @@ export function updateProduction(w: World): void {
     if (m.dead || m.queue.length === 0 || m.kind !== 'mothership') continue;
     const slots = Math.min(ECONOMY.productionSlots, m.queue.length);
     for (let i = 0; i < slots; i++) m.queue[i].progress += DT;
-    const done = m.queue.findIndex((q, i) => i < slots && q.progress >= UNITS[q.kind].buildTime);
+    const done = m.queue.findIndex((q, i) => i < slots && q.progress >= w.def(m.faction, q.kind).buildTime);
     if (done < 0) continue;
     const [item] = m.queue.splice(done, 1);
-    const def = UNITS[item.kind];
+    const def = w.def(m.faction, item.kind);
     const a = Math.atan2(m.rallyY - m.y, m.rallyX - m.x) + w.rng.range(-0.5, 0.5);
     const r = m.radius + def.radius + 6;
     const u = w.spawnUnit(item.kind, m.faction, m.x + Math.cos(a) * r, m.y + Math.sin(a) * r, a);
@@ -76,7 +78,7 @@ export function updateProduction(w: World): void {
     if (p.queue.length === 0 || p.owner < 0) continue;
     const item = p.queue[0];
     item.progress += DT;
-    if (item.progress < UNITS.turret.buildTime) continue;
+    if (item.progress < w.def(p.owner, 'turret').buildTime) continue;
     p.queue.shift();
     const used = new Set(p.turretIds.map((id) => w.unit(id)?.order.targetId ?? -1));
     let slot = 0;
@@ -98,5 +100,38 @@ export function updateIncome(w: World): void {
     const gain = p.income * f.incomeBonus * DT;
     f.minerals += gain;
     f.stats.income += gain;
+  }
+}
+
+/** Avvia una ricerca sulla Nave Madre. Restituisce un messaggio d'errore o null. */
+export function startResearch(w: World, fid: number, track: ResearchTrack): string | null {
+  const f = w.factions[fid];
+  if (!f?.alive || !w.mothershipOf(fid)) return 'Serve la Nave Madre';
+  if (f.researching) return 'È già in corso una ricerca';
+  const cost = researchCost(f.doctrine, f.research, track);
+  if (cost === null) return `${RESEARCH[track].name}: livello massimo raggiunto`;
+  if (f.minerals < cost) return 'Minerali insufficienti';
+  f.minerals -= cost;
+  f.researching = { track, progress: 0, cost };
+  return null;
+}
+
+export function cancelResearch(w: World, fid: number): void {
+  const f = w.factions[fid];
+  if (!f?.researching) return;
+  f.minerals += f.researching.cost;
+  f.researching = null;
+}
+
+export function updateResearch(w: World): void {
+  for (const f of w.factions) {
+    const r = f.researching;
+    if (!r || !f.alive) continue;
+    r.progress += DT;
+    if (r.progress < researchTime(f.research, r.track)) continue;
+    f.research[r.track]++;
+    f.researching = null;
+    w.refreshDefs(f.id);
+    w.events.push({ t: 'research', faction: f.id, track: r.track, level: f.research[r.track] });
   }
 }
