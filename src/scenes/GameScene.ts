@@ -1,7 +1,10 @@
 import Phaser from 'phaser';
 import { RESEARCH, type ResearchTrack } from '../data/research';
 import type { UnitKind } from '../data/units';
+import { randomMapId } from '../data/mapgen';
+import { getMap } from '../data/maps';
 import { Match, type MatchConfig } from '../game/Match';
+import { getSurvivalRecord, submitSurvivalRecord, type SurvivalRecord } from '../game/records';
 import { InputController } from '../input/InputController';
 import { sfx } from '../render/audio';
 import { WorldRenderer } from '../render/WorldRenderer';
@@ -26,6 +29,8 @@ export class GameScene extends Phaser.Scene {
   groups = new Map<number, number[]>();
   paused = false;
   speedIndex = 1;
+  /** esito della sopravvivenza, calcolato a fine partita */
+  survivalResult: { wave: number; ticks: number; isRecord: boolean; record: SurvivalRecord | null } | null = null;
   private acc = 0;
   private overHandled = false;
 
@@ -43,6 +48,7 @@ export class GameScene extends Phaser.Scene {
     this.acc = 0;
     this.overHandled = false;
     this.hud = null;
+    this.survivalResult = null;
   }
 
   create(): void {
@@ -134,7 +140,13 @@ export class GameScene extends Phaser.Scene {
 
   restart(): void {
     this.scene.stop('Hud');
-    this.scene.restart({ ...this.config, seed: undefined });
+    let mapId = this.config.mapId;
+    if (this.match.mode === 'survival') {
+      // la sopravvivenza si rigioca su una nuova mappa casuale della stessa dimensione
+      const size = getMap(mapId).width > 5000 ? 'large' : getMap(mapId).width > 4000 ? 'medium' : 'small';
+      mapId = randomMapId({ seed: Math.floor(Math.random() * 90000) + 10000, players: 2, size, richness: 'normal' });
+    }
+    this.scene.restart({ ...this.config, mapId, seed: undefined });
   }
 
   toMenu(): void {
@@ -149,7 +161,12 @@ export class GameScene extends Phaser.Scene {
       this.overHandled = true;
       this.selection.clear();
       const won = e.winner === me;
-      if (me >= 0) sfx.play(won ? 'victory' : 'defeat');
+      const sv = this.match.survival;
+      if (sv && me >= 0) {
+        const isRecord = submitSurvivalRecord(this.config.difficulty, sv.wave, this.world.tick);
+        this.survivalResult = { wave: sv.wave, ticks: this.world.tick, isRecord, record: getSurvivalRecord(this.config.difficulty) };
+      }
+      if (me >= 0) sfx.play(won || this.survivalResult?.isRecord ? 'victory' : 'defeat');
       this.time.delayedCall(1200, () => this.hud?.showGameOver(won));
       return;
     }
@@ -171,6 +188,10 @@ export class GameScene extends Phaser.Scene {
           this.hud.message('Siamo sotto attacco!', '#ff8a80', { x: e.x, y: e.y });
           sfx.play('alert');
         }
+        break;
+      case 'wave':
+        this.hud.message(`Ondata ${e.wave} in arrivo!`, '#d9a6ff', { x: e.x, y: e.y });
+        sfx.play('alert');
         break;
       case 'research':
         if (e.faction === me) {

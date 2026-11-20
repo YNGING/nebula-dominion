@@ -124,6 +124,8 @@ export interface Faction {
   controller: 'human' | 'ai';
   difficulty: Difficulty;
   doctrine: DoctrineId | null;
+  team: number;
+  invader: boolean;
   research: ResearchLevels;
   /** ricerca in corso sulla Nave Madre (una alla volta) */
   researching: { track: ResearchTrack; progress: number; cost: number } | null;
@@ -144,4 +146,5 @@ export type GameEvent =
   | { t: 'underAttack'; faction: FactionId; x: number; y: number }
   | { t: 'eliminated'; faction: FactionId }
   | { t: 'research'; faction: FactionId; track: ResearchTrack; level: number }
+  | { t: 'wave'; wave: number; x: number; y: number }
   | { t: 'gameOver'; winner: FactionId | null };

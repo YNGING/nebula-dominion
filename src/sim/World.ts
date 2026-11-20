@@ -29,6 +29,10 @@ export interface FactionSetup {
   difficulty: Difficulty;
   /** null = nessuna dottrina (statistiche base) */
   doctrine?: DoctrineId | null;
+  /** squadra: fazioni della stessa squadra sono alleate (predefinita: una squadra per fazione) */
+  team?: number;
+  /** fazione senza Nave Madre (ondate della sopravvivenza): mai eliminata, esclusa dalla vittoria */
+  invader?: boolean;
 }
 
 export interface WorldSetup {
@@ -37,6 +41,8 @@ export interface WorldSetup {
   seed: number;
   /** false nei test: nessuna Nave Madre/Minatore iniziale */
   startUnits?: boolean;
+  /** true: nessuna vittoria possibile, solo la sconfitta (sopravvivenza) */
+  endless?: boolean;
 }
 
 export class World {
@@ -55,6 +61,7 @@ export class World {
   events: GameEvent[] = [];
   over = false;
   winner: FactionId | null = null;
+  readonly endless: boolean;
   /** punto di partenza di ogni fazione */
   spawnOf: { x: number; y: number }[] = [];
 
@@ -69,6 +76,7 @@ export class World {
     this.width = setup.map.width;
     this.height = setup.map.height;
     this.rng = new Rng(setup.seed);
+    this.endless = setup.endless ?? false;
     this.grid = new SpatialGrid<Unit>(this.width, this.height, 128);
 
     this.factions = setup.factions.map((fs, i) => ({
@@ -78,6 +86,8 @@ export class World {
       controller: fs.controller,
       difficulty: fs.difficulty,
       doctrine: fs.doctrine ?? null,
+      team: fs.team ?? i,
+      invader: fs.invader ?? false,
       research: emptyLevels(),
       researching: null,
       minerals: ECONOMY.startMinerals,
@@ -147,7 +157,8 @@ export class World {
   }
 
   private placeStartUnits(): void {
-    const n = this.factions.length;
+    const players = this.factions.filter((f) => !f.invader);
+    const n = players.length;
     const spawns = this.map.spawns;
     let order: number[];
     if (n <= 2) {
@@ -158,7 +169,7 @@ export class World {
     }
     const cx = this.width / 2;
     const cy = this.height / 2;
-    this.factions.forEach((f, i) => {
+    players.forEach((f, i) => {
       const s = spawns[order[i]];
       this.spawnOf[f.id] = { x: s.x, y: s.y };
       const toCenter = Math.atan2(cy - s.y, cx - s.x);
@@ -214,7 +225,12 @@ export class World {
   }
 
   isEnemy(a: FactionId, b: FactionId): boolean {
-    return a !== b && a !== NEUTRAL && b !== NEUTRAL;
+    if (a === b || a === NEUTRAL || b === NEUTRAL) return false;
+    return this.factions[a].team !== this.factions[b].team;
+  }
+
+  teamOf(f: FactionId): number {
+    return this.factions[f]?.team ?? -1;
   }
 
   supplyUsed(f: FactionId): number {
@@ -370,23 +386,34 @@ export class World {
   }
 
   private checkVictory(): void {
-    const alive = this.factions.filter((f) => f.alive);
+    // gli invasori non contano: la partita si decide tra le fazioni con una Nave Madre
+    const contenders = this.factions.filter((f) => !f.invader);
+    const alive = contenders.filter((f) => f.alive);
+    const teams = new Set(alive.map((f) => f.team));
     const human = this.factions.find((f) => f.controller === 'human');
-    if (human && !human.alive) {
+    const pickWinner = (): FactionId | null => {
+      if (teams.size !== 1 || alive.length === 0) return null;
+      return human && human.alive ? human.id : alive[0].id;
+    };
+    if ((human && !human.alive) || alive.length === 0) {
       this.over = true;
-      this.winner = alive.length === 1 ? alive[0].id : null;
-    } else if (alive.length <= 1 && this.factions.length > 1) {
+      this.winner = pickWinner();
+    } else if (!this.endless && teams.size <= 1 && new Set(contenders.map((f) => f.team)).size > 1) {
       this.over = true;
-      this.winner = alive.length === 1 ? alive[0].id : null;
+      this.winner = pickWinner();
     }
     if (this.over) this.events.push({ t: 'gameOver', winner: this.winner });
   }
 
   // ---------------------------------------------------------------- loop
 
-  step(): void {
+  /**
+   * Avanza di un tick. `keepEvents`: non svuotare gli eventi già emessi in questo tick
+   * dai controller esterni (ondate, missioni), che girano prima della simulazione.
+   */
+  step(keepEvents = false): void {
     if (this.over) return;
-    this.events.length = 0;
+    if (!keepEvents) this.events.length = 0;
     this.tick++;
 
     for (const u of this.units) {

@@ -43,7 +43,10 @@ try {
   await page.mouse.move(720, 420);
   await sleep(800);
   await page.screenshot({ path: `${OUT}/1-menu.png` });
-
+  // pagina principale -> schermaglia -> avvio
+  await page.keyboard.press('Enter');
+  await sleep(400);
+  await page.screenshot({ path: `${OUT}/1b-skirmish.png` });
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => window.__game.scene.isActive('Hud'), null, { timeout: 10000 });
   const cam0 = await page.evaluate(() => {
@@ -102,6 +105,45 @@ try {
     };
   });
 
+  // sopravvivenza: si avanza fino alla seconda ondata, poi fino alla sconfitta
+  await page.evaluate(() => {
+    const game = window.__game;
+    game.scene.getScene('Hud').scene.stop();
+    game.scene.start('Game', { mode: 'survival', mapId: 'random:31337:2:small:normal', aiCount: 0, difficulty: 'normal', seed: 4 });
+  });
+  await page.waitForFunction(() => window.__game.scene.isActive('Hud'), null, { timeout: 10000 });
+  await sleep(800);
+  const survival = await page.evaluate(() => {
+    const gs = window.__game.scene.getScene('Game');
+    const sv = gs.match.survival;
+    while (sv.wave < 2) {
+      gs.match.step();
+      for (const e of gs.world.events) gs.onEvent(e);
+    }
+    for (let i = 0; i < 20 * 25; i++) {
+      gs.match.step();
+      for (const e of gs.world.events) gs.onEvent(e);
+    }
+    const inv = gs.world.units.filter((u) => u.faction === 1);
+    if (inv.length) gs.centerOn(inv[0].x, inv[0].y);
+    return { wave: sv.wave, invaders: inv.length };
+  });
+  await sleep(1200);
+  await page.screenshot({ path: `${OUT}/5a-survival.png` });
+  const survivalEnd = await page.evaluate(() => {
+    const gs = window.__game.scene.getScene('Game');
+    const m = gs.world.mothershipOf(0);
+    gs.world.damage(m, 1e9, 1);
+    for (let i = 0; i < 3 && !gs.world.over; i++) {
+      gs.match.step();
+      for (const e of gs.world.events) gs.onEvent(e);
+    }
+    return { over: gs.world.over, wave: gs.match.survival.wave };
+  });
+  await sleep(2200);
+  await page.screenshot({ path: `${OUT}/5b-survival-over.png` });
+  if (!survivalEnd.over) errors.push('la sopravvivenza non termina alla distruzione della Nave Madre');
+
   // partita veloce IA contro IA in modalità spettatore fino alla fine
   await page.evaluate(() => {
     const game = window.__game;
@@ -131,7 +173,7 @@ try {
   await sleep(2500);
   await page.screenshot({ path: `${OUT}/6-gameover.png` });
 
-  console.log(JSON.stringify({ renderer, state, result, errors }, null, 2));
+  console.log(JSON.stringify({ renderer, state, survival, survivalEnd, result, errors }, null, 2));
   if (errors.length) process.exitCode = 1;
 } finally {
   await browser?.close();

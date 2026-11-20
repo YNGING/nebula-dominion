@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { FACTION_STYLES, NEUTRAL_COLOR } from '../data/factions';
+import { FACTION_STYLES, INVADER_STYLE, NEUTRAL_COLOR } from '../data/factions';
 import { UNITS, type UnitKind } from '../data/units';
 import { Rng } from '../sim/rng';
 
@@ -101,8 +101,9 @@ function lerpColor(a: number, b: number, t: number): number {
   );
 }
 
-export function shipKey(kind: UnitKind, faction: number): string {
-  return `ship_${kind}_${faction < 0 ? 'n' : faction}`;
+/** Chiave della texture di una nave per un colore di fazione. */
+export function shipKey(kind: UnitKind, color: number): string {
+  return `ship_${kind}_${color.toString(16)}`;
 }
 
 /** Scala con cui disegnare la texture di una nave: le texture sono generate a 2x per nitidezza. */
@@ -454,10 +455,8 @@ function drawIcons(scene: Phaser.Scene): void {
 
 export function generateTextures(scene: Phaser.Scene): void {
   const kinds = Object.keys(UNITS) as UnitKind[];
-  FACTION_STYLES.forEach((s, i) => {
-    for (const k of kinds) drawShip(scene, k, s.color, shipKey(k, i));
-  });
-  for (const k of kinds) drawShip(scene, k, NEUTRAL_COLOR, shipKey(k, -1));
+  const colors = [...FACTION_STYLES.map((s) => s.color), INVADER_STYLE.color, NEUTRAL_COLOR];
+  for (const color of colors) for (const k of kinds) drawShip(scene, k, color, shipKey(k, color));
   softCircle(scene, 'glow', 128, 1.6, 0.9);
   softCircle(scene, 'nebula', 256, 1.2, 0.5);
   const sg = scene.make.graphics({}, false);

@@ -257,6 +257,10 @@ export class WorldRenderer {
         }
         break;
       }
+      case 'wave': {
+        this.ringPulse(e.x, e.y, 260, 0xc77dff, 1200, 0.9);
+        break;
+      }
       case 'research': {
         const m = this.world.mothershipOf(e.faction);
         if (m && e.faction === this.humanId) this.ringPulse(m.x, m.y, m.radius * 3, 0xffd54f, 800, 0.9);
@@ -354,7 +358,7 @@ export class WorldRenderer {
       .setBlendMode(Phaser.BlendModes.ADD)
       .setDepth(DEPTH.glow);
     const body = this.scene.add
-      .image(u.x, u.y, shipKey(u.kind, u.faction))
+      .image(u.x, u.y, shipKey(u.kind, color))
       .setScale(1 / SHIP_TEX_SCALE)
       .setDepth(def.structure ? DEPTH.structure : DEPTH.ship);
     return { body, glow };
@@ -510,7 +514,7 @@ export class WorldRenderer {
   }
 
   unitKindsTexture(kind: UnitKind): string {
-    return shipKey(kind, this.humanId < 0 ? 0 : this.humanId);
+    return shipKey(kind, this.colorOf(this.humanId < 0 ? 0 : this.humanId));
   }
 
   get boxDepth(): number {

@@ -12,6 +12,11 @@ Realizzato con **Phaser 3 + TypeScript + Vite**. Tutta la grafica e l'audio sono
 - Se nella zona ci sono navi di più fazioni, il pianeta è conteso e la conquista si ferma.
 - **Vittoria**: distruggi tutte le Navi Madri nemiche.
 
+### Modalità
+
+- **Schermaglia**: tu contro 1-3 IA su una mappa fissa o casuale; vince chi distrugge tutte le Navi Madri nemiche.
+- **Sopravvivenza**: sei solo contro lo Sciame del Vuoto. Le ondate arrivano dai bordi di una mappa casuale, ogni volta più numerose e meglio armate (nuovi tipi di nave, Corazzate "boss" ogni 5 ondate, potenziamenti ogni 4). Il record di ondate per difficoltà viene salvato nel browser.
+
 ### Mappe
 
 Oltre alle 3 mappe fisse puoi scegliere **Casuale**: il generatore crea una mappa simmetrica (quindi equa) a partire da un seme, con dimensione (piccola, media, grande) e quantità di risorse a scelta. Stesso seme = stessa mappa, così puoi rigiocare una mappa che ti è piaciuta. Con 1 avversario la mappa ha 2 basi, con 2-3 avversari 4 basi. Il menu mostra un'anteprima della mappa.
@@ -73,6 +78,7 @@ npm run smoke      # smoke test con Playwright sulla build (richiede Playwright 
 
 - `src/sim/` — simulazione deterministica a 20 tick/s in TypeScript puro (nessun import di Phaser): movimento, combattimento, economia, conquista, comandi.
 - `src/ai/` — IA a macchina a stati (economia, espansione, difesa, ondate d'attacco), tre livelli di difficoltà.
+- `src/game/` — `Match` (assembla mondo e controller), modalità sopravvivenza (`modes/SurvivalController.ts`), record.
 - `src/data/` — statistiche di navi e armi, ricerca, dottrine, mappe: il bilanciamento si fa qui.
 - `src/data/mapgen.ts` — generatore di mappe casuali simmetriche (deterministico dato il seme).
 - `src/sim/stats.ts` — statistiche effettive per fazione (base + dottrina + ricerca).

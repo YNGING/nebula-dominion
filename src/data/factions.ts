@@ -77,6 +77,9 @@ export const FACTION_STYLES: FactionStyle[] = [
 
 export const NEUTRAL_COLOR = 0x8a93a6;
 
+/** Gli invasori della modalità sopravvivenza. */
+export const INVADER_STYLE: FactionStyle = { name: 'Sciame del Vuoto', color: 0xc77dff, css: '#c77dff' };
+
 export interface DifficultyParams {
   label: string;
   /** ogni quanti tick l'IA ragiona */

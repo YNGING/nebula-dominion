@@ -177,7 +177,13 @@ export class HudScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', this.layout, this));
 
     if (this.gs.humanId >= 0) {
-      this.message('Estrai minerali, conquista i pianeti e distruggi la Nave Madre nemica!', '#ffd54f');
+      const sv = this.gs.match.survival;
+      this.message(
+        sv
+          ? `Resisti alle ondate dello Sciame del Vuoto! La prima arriva tra ${fmtTime(sv.secondsToNext * 20)}.`
+          : 'Estrai minerali, conquista i pianeti e distruggi la Nave Madre nemica!',
+        '#ffd54f',
+      );
       this.message('Premi F1 o AIUTO per i comandi', '#9fb0d8');
     }
   }
@@ -323,6 +329,11 @@ export class HudScene extends Phaser.Scene {
     this.tooltip.setPosition(x, by - h - 8).setVisible(true);
   }
 
+  /** Colore del giocatore (o della prima fazione in modalità spettatore). */
+  private get myColor(): number {
+    return this.gs.world.factions[Math.max(0, this.gs.humanId)].color;
+  }
+
   private shipIconScale(kind: UnitKind): number {
     const r = UNITS[kind].radius;
     return Math.min(1.1, 21 / (r * 2.2));
@@ -339,7 +350,7 @@ export class HudScene extends Phaser.Scene {
     if (wp) lines.push(`${wp.name}: ${Math.round((wp.damage / wp.cooldown) * 10) / 10} danni/s, gittata ${Math.round(wp.range)}`);
     if (!supplyOk) lines.push('', 'Limite flotta raggiunto: conquista altri pianeti.');
     return {
-      icon: shipKey(kind, gs.humanId),
+      icon: shipKey(kind, this.myColor),
       iconScale: this.shipIconScale(kind),
       hotkey: hk,
       label: String(def.cost),
@@ -406,7 +417,7 @@ export class HudScene extends Phaser.Scene {
         const def = gs.world.def(gs.humanId, q.kind);
         const active = i < ECONOMY.productionSlots;
         specs[COLS * 2 + i] = {
-          icon: shipKey(q.kind, gs.humanId),
+          icon: shipKey(q.kind, this.myColor),
           iconScale: this.shipIconScale(q.kind),
           enabled: active,
           progress: active ? q.progress / def.buildTime : 0,
@@ -424,7 +435,7 @@ export class HudScene extends Phaser.Scene {
       const f = gs.world.factions[gs.humanId];
       const room = planet.turretIds.length + planet.queue.length < ECONOMY.turretsPerPlanet;
       specs[0] = {
-        icon: shipKey('turret', gs.humanId),
+        icon: shipKey('turret', this.myColor),
         iconScale: 0.8,
         hotkey: 'Q',
         label: String(def.cost),
@@ -437,7 +448,7 @@ export class HudScene extends Phaser.Scene {
       };
       planet.queue.forEach((q, i) => {
         specs[COLS + i] = {
-          icon: shipKey('turret', gs.humanId),
+          icon: shipKey('turret', this.myColor),
           iconScale: 0.8,
           enabled: i === 0,
           progress: i === 0 ? q.progress / def.buildTime : 0,
@@ -585,7 +596,7 @@ export class HudScene extends Phaser.Scene {
       const cx = r.x + 12 + (i % 6) * 60;
       const cy = r.y + 40 + Math.floor(i / 6) * 50;
       const box = this.add.rectangle(0, 0, 54, 44, 0x121a36, 1).setOrigin(0, 0).setStrokeStyle(1, BORDER).setInteractive({ useHandCursor: true });
-      const img = this.add.image(27, 20, shipKey(kind, gs.humanId)).setScale(this.shipIconScale(kind) * 0.8);
+      const img = this.add.image(27, 20, shipKey(kind, this.myColor)).setScale(this.shipIconScale(kind) * 0.8);
       const t = text(this, 50, 42, `${n}`, 15, '#ffffff', true).setOrigin(1, 1);
       const c = this.add.container(cx, cy, [box, img, t]);
       box.on('pointerdown', () => {
@@ -782,22 +793,29 @@ export class HudScene extends Phaser.Scene {
     const { c, x, y } = this.makeOverlay(800, 460);
     const box = c.list[1] as Phaser.GameObjects.Rectangle;
     const spectate = gs.humanId < 0;
-    const titleStr = spectate ? 'FINE SIMULAZIONE' : won ? 'VITTORIA' : 'SCONFITTA';
-    const title = text(this, x + box.width / 2, y + 44, titleStr, 44, spectate ? '#ffd54f' : won ? '#76ff7a' : '#ff5a52', true)
+    const sr = gs.survivalResult;
+    const titleStr = sr ? 'RESISTENZA TERMINATA' : spectate ? 'FINE SIMULAZIONE' : won ? 'VITTORIA' : 'SCONFITTA';
+    const titleColor = sr ? '#d9a6ff' : spectate ? '#ffd54f' : won ? '#76ff7a' : '#ff5a52';
+    const title = text(this, x + box.width / 2, y + 44, titleStr, sr ? 38 : 44, titleColor, true)
       .setOrigin(0.5)
       .setFontFamily('Orbitron, sans-serif');
-    const sub = text(
-      this,
-      x + box.width / 2,
-      y + 88,
-      `Durata ${fmtTime(w.tick)}  ·  ${w.map.name}  ·  IA ${DIFFICULTIES[gs.config.difficulty].label}`,
-      18,
-      '#9fb0d8',
-    ).setOrigin(0.5);
+    const subStr = sr
+      ? `Ondata raggiunta: ${sr.wave}  ·  Tempo ${fmtTime(sr.ticks)}  ·  ${DIFFICULTIES[gs.config.difficulty].label}`
+      : `Durata ${fmtTime(w.tick)}  ·  ${w.map.name}  ·  IA ${DIFFICULTIES[gs.config.difficulty].label}`;
+    const sub = text(this, x + box.width / 2, y + 88, subStr, 18, '#9fb0d8').setOrigin(0.5);
     c.add([title, sub]);
+    if (sr) {
+      const recStr = sr.isRecord
+        ? 'NUOVO RECORD!'
+        : sr.record
+          ? `Record: ondata ${sr.record.wave} (${fmtTime(sr.record.ticks)})`
+          : '';
+      c.add(text(this, x + box.width / 2, y + 112, recStr, 18, sr.isRecord ? '#ffd54f' : '#7f8db0', true).setOrigin(0.5));
+    }
+    const tOff = sr ? 22 : 0;
     const cols = ['Fazione', 'Minerali', 'Costruite', 'Distrutte', 'Perse', 'Pianeti'];
     const colX = [0, 300, 400, 500, 600, 680].map((v) => x + 30 + v * Math.min(1, (box.width - 60) / 740));
-    cols.forEach((h, i) => c.add(text(this, colX[i], y + 126, h, 17, '#ffd54f', true)));
+    cols.forEach((h, i) => c.add(text(this, colX[i], y + 126 + tOff, h, 17, '#ffd54f', true)));
     w.factions.forEach((f, row) => {
       const vals = [
         f.name + (f.doctrine ? ` (${DOCTRINES[f.doctrine].name})` : '') + (f.alive ? '' : ' ✝'),
@@ -807,7 +825,7 @@ export class HudScene extends Phaser.Scene {
         String(f.stats.lost),
         String(f.stats.planetsCaptured),
       ];
-      vals.forEach((v, i) => c.add(text(this, colX[i], y + 158 + row * 30, v, 18, i === 0 ? '#' + f.color.toString(16).padStart(6, '0') : '#dbe4ff', i === 0)));
+      vals.forEach((v, i) => c.add(text(this, colX[i], y + 158 + tOff + row * 30, v, 18, i === 0 ? '#' + f.color.toString(16).padStart(6, '0') : '#dbe4ff', i === 0)));
     });
     this.overlayButton(c, x + box.width / 2 - 120, y + box.height - 50, 'RIGIOCA', () => gs.restart());
     this.overlayButton(c, x + box.width / 2 + 120, y + box.height - 50, 'MENU', () => gs.toMenu());
@@ -839,7 +857,13 @@ export class HudScene extends Phaser.Scene {
       this.supply.setText(`Flotta ${used}/${cap}`).setColor(used >= cap ? '#ff8a80' : '#dbe4ff');
       this.planetsText.setText(`Pianeti ${w.planets.filter((p) => p.owner === gs.humanId).length}/${w.planets.length}`);
     }
-    this.clock.setText(`${fmtTime(w.tick)}${gs.speed !== 1 ? `  ·  ${gs.speed}x` : ''}`);
+    let clock = `${fmtTime(w.tick)}${gs.speed !== 1 ? `  ·  ${gs.speed}x` : ''}`;
+    const sv = gs.match.survival;
+    if (sv) {
+      const next = Math.ceil(sv.secondsToNext);
+      clock += `   ·   Ondata ${sv.wave}   ·   prossima tra ${fmtTime(next * 20)}   ·   invasori ${sv.invadersLeft}`;
+    }
+    this.clock.setText(clock).setColor(sv && sv.secondsToNext < 10 ? '#d9a6ff' : '#9fb0d8');
     this.pauseText.setVisible(gs.paused && !this.overlay);
     this.armedText.setVisible(gs.controls.attackMoveArmed);
 
