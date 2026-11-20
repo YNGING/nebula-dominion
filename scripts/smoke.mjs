@@ -106,7 +106,7 @@ try {
   await page.evaluate(() => {
     const game = window.__game;
     game.scene.getScene('Hud').scene.stop();
-    game.scene.start('Game', { mapId: 'orione', aiCount: 3, difficulty: 'hard', spectate: true, seed: 3 });
+    game.scene.start('Game', { mapId: 'random:777:4:small:normal', aiCount: 3, difficulty: 'hard', spectate: true, seed: 3 });
   });
   await sleep(1500);
   await page.evaluate(() => {

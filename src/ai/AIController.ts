@@ -309,8 +309,12 @@ export class AIController {
     const free = this.freeUnits(army).filter((u) => UNITS[u.kind].weapon || u.kind === 'support');
 
     if (!this.attacking) {
-      if (seconds < this.params.attackDelay && this.armySupply(free) < this.waveSize * 1.5) return;
-      if (this.armySupply(free) < this.waveSize) return;
+      // al limite flotta la soglia dell'ondata può diventare irraggiungibile: si attacca con ciò che si ha
+      const capped = w.supplyUsed(this.fid) >= w.supplyCap(this.fid) - 2 && this.armySupply(free) >= 8;
+      if (!capped) {
+        if (seconds < this.params.attackDelay && this.armySupply(free) < this.waveSize * 1.5) return;
+        if (this.armySupply(free) < this.waveSize) return;
+      }
       this.attacking = true;
       for (const u of free) this.roles.set(u.id, 'wave');
       wave.push(...free);

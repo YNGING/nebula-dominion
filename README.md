@@ -12,6 +12,10 @@ Realizzato con **Phaser 3 + TypeScript + Vite**. Tutta la grafica e l'audio sono
 - Se nella zona ci sono navi di più fazioni, il pianeta è conteso e la conquista si ferma.
 - **Vittoria**: distruggi tutte le Navi Madri nemiche.
 
+### Mappe
+
+Oltre alle 3 mappe fisse puoi scegliere **Casuale**: il generatore crea una mappa simmetrica (quindi equa) a partire da un seme, con dimensione (piccola, media, grande) e quantità di risorse a scelta. Stesso seme = stessa mappa, così puoi rigiocare una mappa che ti è piaciuta. Con 1 avversario la mappa ha 2 basi, con 2-3 avversari 4 basi. Il menu mostra un'anteprima della mappa.
+
 ### Dottrine
 
 Prima della partita scegli una dottrina; le IA ne ricevono una casuale.
@@ -70,6 +74,7 @@ npm run smoke      # smoke test con Playwright sulla build (richiede Playwright 
 - `src/sim/` — simulazione deterministica a 20 tick/s in TypeScript puro (nessun import di Phaser): movimento, combattimento, economia, conquista, comandi.
 - `src/ai/` — IA a macchina a stati (economia, espansione, difesa, ondate d'attacco), tre livelli di difficoltà.
 - `src/data/` — statistiche di navi e armi, ricerca, dottrine, mappe: il bilanciamento si fa qui.
+- `src/data/mapgen.ts` — generatore di mappe casuali simmetriche (deterministico dato il seme).
 - `src/sim/stats.ts` — statistiche effettive per fazione (base + dottrina + ricerca).
 - `src/render/` — texture generate a runtime, rendering del mondo, nebbia di guerra, effetti sonori WebAudio.
 - `src/scenes/`, `src/input/` — scene Phaser (menu, gioco, HUD) e controlli.

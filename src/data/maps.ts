@@ -1,3 +1,5 @@
+import { generateMap, parseRandomMapId } from './mapgen';
+
 // Mappe definite come dati. Gli asteroidi vengono generati attorno ai "campi" con un RNG a seme.
 
 export interface PlanetDef {
@@ -165,6 +167,19 @@ export const MAPS: MapDef[] = [
   },
 ];
 
+const randomCache = new Map<string, MapDef>();
+
+/** Mappa per id: una delle mappe fisse oppure una casuale ("random:seme:giocatori:dimensione:risorse"). */
 export function getMap(id: string): MapDef {
-  return MAPS.find((m) => m.id === id) ?? MAPS[0];
+  const fixed = MAPS.find((m) => m.id === id);
+  if (fixed) return fixed;
+  const opts = parseRandomMapId(id);
+  if (!opts) return MAPS[0];
+  let map = randomCache.get(id);
+  if (!map) {
+    map = generateMap(opts);
+    if (randomCache.size > 20) randomCache.clear();
+    randomCache.set(id, map);
+  }
+  return map;
 }
