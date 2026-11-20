@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyProgress, isUnlocked, loadProgress, recordWin, saveProgress } from '../src/game/missions/progress';
+import { emptyProgress, loadProgress, recordWin, saveProgress } from '../src/game/missions/progress';
 
 function memStore(initial: Record<string, string> = {}) {
   const data = { ...initial };
@@ -7,24 +7,26 @@ function memStore(initial: Record<string, string> = {}) {
 }
 
 describe('avanzamento della campagna', () => {
-  it('sblocca le missioni in sequenza e tiene il miglior tempo', () => {
+  it('tiene il miglior tempo di ogni missione, in qualsiasi ordine', () => {
     let p = emptyProgress();
-    expect(isUnlocked(p, 0)).toBe(true);
-    expect(isUnlocked(p, 1)).toBe(false);
-    p = recordWin(p, 0, 'tutorial', 5000);
-    expect(isUnlocked(p, 1)).toBe(true);
-    p = recordWin(p, 0, 'tutorial', 6000);
+    p = recordWin(p, 'dominio', 9000);
+    p = recordWin(p, 'tutorial', 5000);
+    p = recordWin(p, 'tutorial', 6000);
     expect(p.best.tutorial).toBe(5000);
-    p = recordWin(p, 0, 'tutorial', 4000);
-    expect(p.best.tutorial).toBe(4000);
-    expect(p.unlocked).toBe(1);
+    p = recordWin(p, 'tutorial', 4000);
+    expect(p.best).toEqual({ dominio: 9000, tutorial: 4000 });
   });
 
   it('salva, ricarica e ignora i dati corrotti', () => {
     const store = memStore();
-    saveProgress(recordWin(emptyProgress(), 2, 'testa-di-ponte', 100), store);
-    expect(loadProgress(store)).toEqual({ unlocked: 3, best: { 'testa-di-ponte': 100 } });
+    saveProgress(recordWin(emptyProgress(), 'testa-di-ponte', 100), store);
+    expect(loadProgress(store)).toEqual({ best: { 'testa-di-ponte': 100 } });
     expect(loadProgress(memStore({ 'nd-campaign': '{rotto' }))).toEqual(emptyProgress());
-    expect(loadProgress(memStore({ 'nd-campaign': '{"unlocked":"x","best":{"a":-3}}' }))).toEqual(emptyProgress());
+    expect(loadProgress(memStore({ 'nd-campaign': '{"best":{"a":-3,"b":"x"}}' }))).toEqual(emptyProgress());
+  });
+
+  it('legge i salvataggi del vecchio formato (con lo sblocco) conservando i tempi', () => {
+    const old = memStore({ 'nd-campaign': '{"unlocked":2,"best":{"tutorial":4200,"minerali":7000}}' });
+    expect(loadProgress(old)).toEqual({ best: { tutorial: 4200, minerali: 7000 } });
   });
 });

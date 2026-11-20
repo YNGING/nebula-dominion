@@ -15,7 +15,7 @@ Realizzato con **Phaser 3 + TypeScript + Vite**. Tutta la grafica e l'audio sono
 ### Modalità
 
 - **Schermaglia**: tu contro 1-3 IA su una mappa fissa o casuale; vince chi distrugge tutte le Navi Madri nemiche.
-- **Campagna**: un tutorial guidato e 5 missioni con obiettivi, dialoghi e regole proprie (Corsa ai minerali, Testa di ponte, Assedio, Scorta, Dominio con un alleato). Ogni vittoria sblocca la missione successiva; avanzamento e migliori tempi sono salvati nel browser.
+- **Campagna**: un tutorial guidato e 5 missioni con obiettivi, dialoghi e regole proprie (Corsa ai minerali, Testa di ponte, Assedio, Scorta, Dominio con un alleato). Tutte le missioni sono giocabili in qualsiasi ordine (il tutorial è consigliato ma facoltativo); missioni completate e migliori tempi sono salvati nel browser.
 - **Sopravvivenza**: sei solo contro lo Sciame del Vuoto. Le ondate arrivano dai bordi di una mappa casuale, ogni volta più numerose e meglio armate (nuovi tipi di nave, Corazzate "boss" ogni 5 ondate, potenziamenti ogni 4). Il record di ondate per difficoltà viene salvato nel browser.
 
 ### Mappe

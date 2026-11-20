@@ -201,11 +201,29 @@ try {
     const gs = window.__game.scene.getScene('Game');
     gs.match.mission.win();
     for (const e of gs.world.events) gs.onEvent(e);
-    return { over: gs.world.over, next: gs.missionResult?.nextId ?? null, saved: JSON.parse(localStorage.getItem('nd-campaign') ?? '{}').unlocked };
+    return { over: gs.world.over, next: gs.missionResult?.nextId ?? null, saved: JSON.parse(localStorage.getItem('nd-campaign') ?? '{}').best?.tutorial ?? 0 };
   });
   await sleep(2200);
   await page.screenshot({ path: `${OUT}/7d-mission-over.png` });
-  if (missionEnd.next !== 'minerali' || missionEnd.saved !== 1) errors.push(`fine missione non registrata: ${JSON.stringify(missionEnd)}`);
+  if (missionEnd.next !== 'minerali' || !(missionEnd.saved > 0)) errors.push(`fine missione non registrata: ${JSON.stringify(missionEnd)}`);
+
+  // una missione avanzata si avvia direttamente, senza aver completato le precedenti
+  await page.evaluate(() => {
+    localStorage.removeItem('nd-campaign');
+    const game = window.__game;
+    game.scene.getScene('Hud').scene.stop();
+    game.scene.stop('Game');
+    game.scene.start('Menu');
+  });
+  await page.waitForFunction(() => window.__game.scene.isActive('Menu'));
+  await page.evaluate(() => window.__game.scene.getScene('Menu').goto('campaign'));
+  await sleep(500);
+  await page.screenshot({ path: `${OUT}/7e-campaign-open.png` });
+  await page.evaluate(() => window.__game.scene.getScene('Menu').startMission('dominio'));
+  await page.waitForFunction(() => window.__game.scene.isActive('Hud'), null, { timeout: 10000 });
+  await sleep(600);
+  const directMission = await page.evaluate(() => window.__game.scene.getScene('Game').match.mission?.def.id ?? null);
+  if (directMission !== 'dominio') errors.push(`missione avanzata non avviabile direttamente (${directMission})`);
 
   // partita veloce IA contro IA in modalità spettatore fino alla fine
   await page.evaluate(() => {
@@ -236,7 +254,7 @@ try {
   await sleep(2500);
   await page.screenshot({ path: `${OUT}/6-gameover.png` });
 
-  console.log(JSON.stringify({ renderer, musicInGame, endTheme, tutorialStep, missionEnd, survival, survivalEnd, result, errors }, null, 2));
+  console.log(JSON.stringify({ renderer, musicInGame, endTheme, tutorialStep, missionEnd, directMission, survival, survivalEnd, result, errors }, null, 2));
   if (errors.length) process.exitCode = 1;
 } finally {
   await browser?.close();

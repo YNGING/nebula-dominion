@@ -6,7 +6,7 @@ import { BUILDABLE_SHIPS, UNITS } from '../data/units';
 import type { MatchConfig } from '../game/Match';
 import { getSurvivalRecord } from '../game/records';
 import { CAMPAIGN } from '../game/missions/campaign';
-import { isUnlocked, loadProgress } from '../game/missions/progress';
+import { loadProgress } from '../game/missions/progress';
 import { sfx } from '../render/audio';
 import { music } from '../render/music';
 import { gfx } from '../render/settings';
@@ -222,28 +222,24 @@ export class MenuScene extends Phaser.Scene {
     this.footer(c, W, H);
   }
 
-  /** Pagina della campagna: missioni in sequenza, sbloccate vincendo la precedente. */
+  /** Pagina della campagna: tutte le missioni sono giocabili in qualsiasi ordine. */
   private buildCampaign(c: Phaser.GameObjects.Container, y: number, W: number, H: number): void {
     const cx = W / 2;
     const prog = loadProgress();
     const twoCols = W >= 900 && H < 860;
     const bw = twoCols ? Math.min(400, W / 2 - 40) : Math.min(460, W - 40);
     const step = H < 700 ? 74 : 84;
-    const nextIdx = CAMPAIGN.findIndex((m, i) => isUnlocked(prog, i) && !prog.best[m.id]);
+    // suggerimento: la prima missione non ancora completata
+    const nextIdx = CAMPAIGN.findIndex((m) => !prog.best[m.id]);
     CAMPAIGN.forEach((m, i) => {
       const col = twoCols ? (i < 3 ? 0 : 1) : 0;
       const row = twoCols ? i % 3 : i;
       const x = twoCols ? cx + (col === 0 ? -bw / 2 - 14 : bw / 2 + 14) : cx;
       const yy = y + 10 + row * step;
-      const unlocked = isUnlocked(prog, i);
       const best = prog.best[m.id];
       const name = `${i === 0 ? 'ADDESTRAMENTO' : `${i}. ${m.title.toUpperCase()}`}${best ? '  ✓' : ''}`;
-      const sub = !unlocked
-        ? 'Bloccata: completa la missione precedente'
-        : best
-          ? `${m.subtitle}  ·  miglior tempo ${fmtTicks(best)}`
-          : m.subtitle;
-      this.bigButton(c, x, yy, bw, name, sub, () => this.startMission(m.id), unlocked);
+      const sub = best ? `${m.subtitle}  ·  miglior tempo ${fmtTicks(best)}` : m.subtitle;
+      this.bigButton(c, x, yy, bw, name, sub, () => this.startMission(m.id));
       if (i === nextIdx) {
         const glow = this.add.rectangle(x, yy, bw + 8, 78).setStrokeStyle(2, 0xffd54f, 0.9);
         this.tweens.add({ targets: glow, alpha: 0.3, yoyo: true, repeat: -1, duration: 700 });

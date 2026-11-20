@@ -34,7 +34,7 @@ export class GameScene extends Phaser.Scene {
   speedIndex = 1;
   /** esito della sopravvivenza, calcolato a fine partita */
   survivalResult: { wave: number; ticks: number; isRecord: boolean; record: SurvivalRecord | null } | null = null;
-  /** esito della missione: id della missione successiva se sbloccata */
+  /** esito della missione: id della missione successiva (offerta dopo una vittoria) */
   missionResult: { won: boolean; reason: string; nextId: string | null } | null = null;
   private cameraTravel = 0;
   private lastScroll = { x: 0, y: 0 };
@@ -194,7 +194,7 @@ export class GameScene extends Phaser.Scene {
       const mission = this.match.mission;
       if (mission && me >= 0) {
         const idx = missionIndex(mission.def.id);
-        if (won) saveProgress(recordWin(loadProgress(), idx, mission.def.id, this.world.tick));
+        if (won) saveProgress(recordWin(loadProgress(), mission.def.id, this.world.tick));
         const next = CAMPAIGN[idx + 1];
         this.missionResult = {
           won,
