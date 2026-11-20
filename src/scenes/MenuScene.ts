@@ -6,6 +6,8 @@ import { BUILDABLE_SHIPS, UNITS } from '../data/units';
 import type { MatchConfig } from '../game/Match';
 import { getSurvivalRecord } from '../game/records';
 import { sfx } from '../render/audio';
+import { music } from '../render/music';
+import { gfx } from '../render/settings';
 import { drawMapPreview } from '../render/mapPreview';
 import { shipKey } from '../render/textures';
 
@@ -58,6 +60,8 @@ function loadSettings(): Settings {
   }
 }
 
+type Page = 'main' | 'skirmish' | 'survival' | 'settings';
+
 interface Row {
   label: string;
   value: string;
@@ -67,7 +71,7 @@ interface Row {
 
 export class MenuScene extends Phaser.Scene {
   private settings!: Settings;
-  private page: 'main' | 'skirmish' | 'survival' = 'main';
+  private page: Page = 'main';
   private root!: Phaser.GameObjects.Container;
   private ships: { img: Phaser.GameObjects.Image; vx: number; vy: number }[] = [];
 
@@ -78,13 +82,17 @@ export class MenuScene extends Phaser.Scene {
   create(): void {
     this.settings = loadSettings();
     this.page = 'main';
+    music.setTheme('menu');
     this.ships = [];
     // navi che attraversano lo sfondo
     for (let i = 0; i < 14; i++) this.spawnShip(true);
     this.build();
     this.scale.on('resize', this.build, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', this.build, this));
-    this.input.keyboard?.on('keydown-ENTER', () => (this.page === 'main' ? this.goto('skirmish') : this.start()));
+    this.input.keyboard?.on('keydown-ENTER', () => {
+      if (this.page === 'main') this.goto('skirmish');
+      else if (this.page !== 'settings') this.start();
+    });
     this.input.keyboard?.on('keydown-ESC', () => this.goto('main'));
   }
 
@@ -113,7 +121,7 @@ export class MenuScene extends Phaser.Scene {
     }
   }
 
-  private goto(page: 'main' | 'skirmish' | 'survival'): void {
+  private goto(page: Page): void {
     if (this.page === page) return;
     this.page = page;
     this.build();
@@ -192,7 +200,7 @@ export class MenuScene extends Phaser.Scene {
   private buildMain(c: Phaser.GameObjects.Container, y: number, W: number, H: number): void {
     const cx = W / 2;
     const bw = Math.min(420, W - 40);
-    const step = H < 700 ? 82 : 96;
+    const step = H < 700 ? 76 : 90;
     y += 20;
     this.bigButton(c, cx, y, bw, 'SCHERMAGLIA', 'Tu contro 1-3 IA, su mappe fisse o casuali', () => this.goto('skirmish'));
     y += step;
@@ -202,7 +210,55 @@ export class MenuScene extends Phaser.Scene {
     y += step;
     this.bigButton(c, cx, y, bw, 'CAMPAGNA', 'In arrivo: tutorial e missioni', () => undefined, false);
     y += step;
+    this.bigButton(c, cx, y, bw, 'IMPOSTAZIONI', 'Musica, effetti sonori e grafica', () => this.goto('settings'));
+    y += step;
     if (H - y > 130 && W >= 640) this.shipLegend(c, W, y);
+    this.footer(c, W, H);
+  }
+
+  /** Pagina delle impostazioni: si applicano subito e restano salvate. */
+  private buildSettings(c: Phaser.GameObjects.Container, y: number, W: number, H: number): void {
+    const cx = W / 2;
+    const pct = (v: number) => `${Math.round(v * 100)}%`;
+    const step = (v: number, d: number) => Math.round(Math.min(1, Math.max(0, v + d * 0.1)) * 10) / 10;
+    const rows: Row[] = [
+      {
+        label: 'VOLUME MUSICA',
+        value: pct(sfx.musicVolume),
+        detail: 'Musica generativa: si fa più intensa durante le battaglie',
+        change: (d) => sfx.setMusicVolume(step(sfx.musicVolume, d)),
+      },
+      {
+        label: 'VOLUME EFFETTI',
+        value: pct(sfx.sfxVolume),
+        detail: 'Spari, esplosioni, avvisi',
+        change: (d) => sfx.setSfxVolume(step(sfx.sfxVolume, d)),
+      },
+      {
+        label: 'EFFETTI VISIVI',
+        value: gfx.quality === 'high' ? 'Alti' : 'Bassi',
+        detail: gfx.quality === 'high' ? 'Scie dei motori, lampi di sparo, fumo' : 'Più leggeri, per computer meno potenti',
+        change: () => gfx.set(gfx.quality === 'high' ? 'low' : 'high'),
+      },
+      {
+        label: 'AUDIO',
+        value: sfx.muted ? 'Disattivato' : 'Attivo',
+        detail: 'Durante la partita: tasto M o pulsante AUDIO',
+        change: () => sfx.setMuted(!sfx.muted),
+      },
+    ];
+    const rowH = H < 760 ? 72 : 78;
+    const half = Math.min(220, W / 2 - 30);
+    for (const row of rows) {
+      this.drawRow(c, row, cx, y, half);
+      y += rowH;
+    }
+    c.add(
+      this.add
+        .text(cx, y + 6, 'Le impostazioni vengono salvate nel browser.', { fontFamily: FONT, fontSize: '15px', color: '#5d6b8f' })
+        .setOrigin(0.5),
+    );
+    this.backButton(c);
     this.footer(c, W, H);
   }
 
@@ -307,6 +363,10 @@ export class MenuScene extends Phaser.Scene {
     }
     if (this.page === 'survival') {
       this.buildSurvival(c, y, W, H);
+      return;
+    }
+    if (this.page === 'settings') {
+      this.buildSettings(c, y, W, H);
       return;
     }
     this.backButton(c);
@@ -463,8 +523,8 @@ export class MenuScene extends Phaser.Scene {
       a.on('pointerout', () => a.setColor('#4fc3f7'));
       a.on('pointerdown', () => {
         sfx.unlock();
-        sfx.play('click');
         row.change(d);
+        sfx.play('click');
         this.saveSettings();
         this.build();
       });

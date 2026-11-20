@@ -26,19 +26,86 @@ const MIN_GAP: Partial<Record<SfxName, number>> = {
   click: 0.03,
 };
 
-class Sfx {
+interface AudioSettings {
+  music: number;
+  sfx: number;
+  muted: boolean;
+}
+
+const AUDIO_KEY = 'nd-audio';
+
+function loadAudioSettings(): AudioSettings {
+  const def: AudioSettings = { music: 0.6, sfx: 0.8, muted: false };
+  try {
+    const raw = localStorage.getItem(AUDIO_KEY);
+    if (raw) {
+      const s = JSON.parse(raw) as Partial<AudioSettings>;
+      const clamp = (v: unknown, d: number) => (Number.isFinite(Number(v)) ? Math.min(1, Math.max(0, Number(v))) : d);
+      return { music: clamp(s.music, def.music), sfx: clamp(s.sfx, def.sfx), muted: !!s.muted };
+    }
+    // migrazione dalla vecchia impostazione
+    def.muted = localStorage.getItem('nd-muted') === '1';
+  } catch {
+    /* storage non disponibile */
+  }
+  return def;
+}
+
+/**
+ * Motore audio: un solo AudioContext con due bus (effetti e musica) e un riverbero.
+ * Gli effetti sonori sono sintetizzati al volo; la musica (music.ts) usa `musicBus` e `reverb`.
+ */
+class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private sfxBus: GainNode | null = null;
+  private musicGain: GainNode | null = null;
+  private reverbNode: ConvolverNode | null = null;
   private noise: AudioBuffer | null = null;
   private last = new Map<SfxName, number>();
-  muted = false;
+  private unlockListeners: (() => void)[] = [];
+  private settings: AudioSettings;
 
   constructor() {
-    try {
-      this.muted = localStorage.getItem('nd-muted') === '1';
-    } catch {
-      /* storage non disponibile */
-    }
+    this.settings = loadAudioSettings();
+  }
+
+  get muted(): boolean {
+    return this.settings.muted;
+  }
+
+  get musicVolume(): number {
+    return this.settings.music;
+  }
+
+  get sfxVolume(): number {
+    return this.settings.sfx;
+  }
+
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
+  get musicBus(): GainNode | null {
+    return this.musicGain;
+  }
+
+  get reverb(): ConvolverNode | null {
+    return this.reverbNode;
+  }
+
+  get noiseBuffer(): AudioBuffer | null {
+    return this.noise;
+  }
+
+  get running(): boolean {
+    return this.ctx?.state === 'running';
+  }
+
+  /** Esegue `fn` appena l'audio è sbloccato (subito, se lo è già). */
+  onUnlock(fn: () => void): void {
+    if (this.ctx) fn();
+    else this.unlockListeners.push(fn);
   }
 
   /** Va chiamato dentro un gesto dell'utente (click o tasto). */
@@ -46,27 +113,75 @@ class Sfx {
     if (!this.ctx) {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return;
-      this.ctx = new Ctor();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.5;
-      this.master.connect(this.ctx.destination);
-      const len = this.ctx.sampleRate;
-      this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+      const ctx = new Ctor();
+      this.ctx = ctx;
+      this.master = ctx.createGain();
+      this.master.connect(ctx.destination);
+      this.sfxBus = ctx.createGain();
+      this.sfxBus.connect(this.master);
+      this.musicGain = ctx.createGain();
+      this.musicGain.connect(this.master);
+      const len = ctx.sampleRate;
+      this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
       const data = this.noise.getChannelData(0);
       for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      // riverbero: risposta all'impulso di rumore che decade
+      const irLen = Math.floor(ctx.sampleRate * 2.5);
+      const ir = ctx.createBuffer(2, irLen, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const d = ir.getChannelData(ch);
+        for (let i = 0; i < irLen; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 3);
+      }
+      this.reverbNode = ctx.createConvolver();
+      this.reverbNode.buffer = ir;
+      const wet = ctx.createGain();
+      wet.gain.value = 0.35;
+      this.reverbNode.connect(wet).connect(this.master);
+      this.applyVolumes();
+      const listeners = this.unlockListeners;
+      this.unlockListeners = [];
+      for (const fn of listeners) fn();
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
-  toggleMute(): boolean {
-    this.muted = !this.muted;
-    if (this.master) this.master.gain.value = this.muted ? 0 : 0.5;
+  private applyVolumes(): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.master?.gain.setTargetAtTime(this.settings.muted ? 0 : 0.6, t, 0.05);
+    this.sfxBus?.gain.setTargetAtTime(this.settings.sfx, t, 0.05);
+    this.musicGain?.gain.setTargetAtTime(this.settings.music * 0.7, t, 0.1);
+  }
+
+  private save(): void {
     try {
-      localStorage.setItem('nd-muted', this.muted ? '1' : '0');
+      localStorage.setItem(AUDIO_KEY, JSON.stringify(this.settings));
     } catch {
       /* storage non disponibile */
     }
-    return this.muted;
+  }
+
+  setMusicVolume(v: number): void {
+    this.settings.music = Math.min(1, Math.max(0, v));
+    this.applyVolumes();
+    this.save();
+  }
+
+  setSfxVolume(v: number): void {
+    this.settings.sfx = Math.min(1, Math.max(0, v));
+    this.applyVolumes();
+    this.save();
+  }
+
+  setMuted(m: boolean): void {
+    this.settings.muted = m;
+    this.applyVolumes();
+    this.save();
+  }
+
+  toggleMute(): boolean {
+    this.setMuted(!this.settings.muted);
+    return this.settings.muted;
   }
 
   private tone(type: OscillatorType, f0: number, f1: number, dur: number, vol: number, delay = 0): void {
@@ -79,7 +194,7 @@ class Sfx {
     o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(this.master!);
+    o.connect(g).connect(this.sfxBus!);
     o.start(t);
     o.stop(t + dur + 0.02);
   }
@@ -97,13 +212,13 @@ class Sfx {
     const g = ctx.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(filt).connect(g).connect(this.master!);
+    src.connect(filt).connect(g).connect(this.sfxBus!);
     src.start(t, Math.random() * 0.5);
     src.stop(t + dur + 0.02);
   }
 
   play(name: SfxName, volume = 1): void {
-    if (!this.ctx || this.muted || this.ctx.state !== 'running' || volume <= 0.01) return;
+    if (!this.ctx || this.settings.muted || this.ctx.state !== 'running' || volume <= 0.01) return;
     const now = this.ctx.currentTime;
     const gap = MIN_GAP[name] ?? 0.05;
     if (now - (this.last.get(name) ?? -1) < gap) return;
@@ -160,4 +275,4 @@ class Sfx {
   }
 }
 
-export const sfx = new Sfx();
+export const sfx = new AudioEngine();

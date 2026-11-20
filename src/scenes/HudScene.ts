@@ -38,6 +38,7 @@ interface CardButton {
   pips: Phaser.GameObjects.Text;
   bar: Phaser.GameObjects.Rectangle;
   spec: ButtonSpec | null;
+  hover: boolean;
 }
 
 interface Rect {
@@ -280,19 +281,26 @@ export class HudScene extends Phaser.Scene {
     const label = text(this, 0, 0, '', 13, '#7ff3ff', true).setOrigin(1, 1);
     const pips = text(this, 0, 0, '', 12, '#ffd54f', true).setOrigin(0, 1);
     const bar = this.add.rectangle(0, 0, BTN - 4, 3, 0x76ff7a, 1).setOrigin(0, 0);
-    const b: CardButton = { bg, icon, hotkey, label, pips, bar, spec: null };
+    const b: CardButton = { bg, icon, hotkey, label, pips, bar, spec: null, hover: false };
     bg.on('pointerover', () => {
       if (!b.spec) return;
+      b.hover = true;
       bg.setStrokeStyle(1, 0x7fa6ff);
+      icon.setScale((b.spec.iconScale ?? 0.75) * 1.12);
       this.showTooltip(b.spec, bg.x, bg.y);
     });
     bg.on('pointerout', () => {
+      b.hover = false;
       bg.setStrokeStyle(1, BORDER);
+      if (b.spec) icon.setScale(b.spec.iconScale ?? 0.75);
       this.tooltip.setVisible(false);
     });
     bg.on('pointerdown', (p: Phaser.Input.Pointer) => {
       if (!b.spec || p.button !== 0) return;
       sfx.unlock();
+      // lampo al clic
+      bg.setFillStyle(0x3a5fb0, 1);
+      this.time.delayedCall(110, () => bg.setFillStyle(b.spec?.enabled === false ? 0x0c1126 : 0x121a36, 1));
       b.spec.onClick();
     });
     return b;
@@ -313,7 +321,7 @@ export class HudScene extends Phaser.Scene {
       return;
     }
     b.bg.setInteractive({ useHandCursor: true });
-    b.icon.setTexture(spec.icon).setScale(spec.iconScale ?? 0.75).setAlpha(spec.enabled ? 1 : 0.35);
+    b.icon.setTexture(spec.icon).setScale((spec.iconScale ?? 0.75) * (b.hover ? 1.12 : 1)).setAlpha(spec.enabled ? 1 : 0.35);
     b.bg.setFillStyle(spec.enabled ? 0x121a36 : 0x0c1126, 1);
     b.hotkey.setText(spec.hotkey ?? '');
     b.label.setText(spec.label ?? '').setColor(spec.enabled ? '#7ff3ff' : '#5a6c8c');

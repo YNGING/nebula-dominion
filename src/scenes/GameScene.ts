@@ -7,6 +7,7 @@ import { Match, type MatchConfig } from '../game/Match';
 import { getSurvivalRecord, submitSurvivalRecord, type SurvivalRecord } from '../game/records';
 import { InputController } from '../input/InputController';
 import { sfx } from '../render/audio';
+import { music } from '../render/music';
 import { WorldRenderer } from '../render/WorldRenderer';
 import { issueCommand, type Command } from '../sim/commands';
 import { DT, type GameEvent, type Unit } from '../sim/types';
@@ -65,6 +66,7 @@ export class GameScene extends Phaser.Scene {
     else cam.centerOn(this.world.width / 2, this.world.height / 2);
 
     this.controls = new InputController(this);
+    music.setTheme('game');
     this.scene.launch('Hud');
     this.scene.bringToTop('Hud');
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.controls.destroy());
@@ -166,10 +168,16 @@ export class GameScene extends Phaser.Scene {
         const isRecord = submitSurvivalRecord(this.config.difficulty, sv.wave, this.world.tick);
         this.survivalResult = { wave: sv.wave, ticks: this.world.tick, isRecord, record: getSurvivalRecord(this.config.difficulty) };
       }
-      if (me >= 0) sfx.play(won || this.survivalResult?.isRecord ? 'victory' : 'defeat');
+      const good = won || !!this.survivalResult?.isRecord || me < 0;
+      if (me >= 0) sfx.play(good ? 'victory' : 'defeat');
+      music.setTheme(good ? 'victory' : 'defeat');
       this.time.delayedCall(1200, () => this.hud?.showGameOver(won));
       return;
     }
+    // intensità della musica: solo ciò che il giocatore vede
+    if (e.t === 'fire' && this.view.onScreen(e.x, e.y)) music.bump(e.weapon === 'cannon' ? 0.03 : 0.012);
+    else if (e.t === 'death' && this.view.onScreen(e.x, e.y)) music.bump(e.kind === 'mothership' ? 0.5 : 0.07);
+    else if (e.t === 'wave') music.bump(0.3);
     if (!this.hud || me < 0) return;
     switch (e.t) {
       case 'captured': {

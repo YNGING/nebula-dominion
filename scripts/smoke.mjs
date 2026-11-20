@@ -34,7 +34,9 @@ const errors = [];
 let browser;
 try {
   await waitServer();
-  browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
+  browser = await chromium.launch({
+    args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'],
+  });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -43,6 +45,19 @@ try {
   await page.mouse.move(720, 420);
   await sleep(800);
   await page.screenshot({ path: `${OUT}/1-menu.png` });
+  // impostazioni: cambio del volume della musica e salvataggio
+  const savedVolume = await page.evaluate(() => {
+    const menu = window.__game.scene.getScene('Menu');
+    menu.goto('settings');
+    window.__audio.sfx.unlock();
+    window.__audio.sfx.setMusicVolume(0.4);
+    return JSON.parse(localStorage.getItem('nd-audio') ?? '{}').music;
+  });
+  if (savedVolume !== 0.4) errors.push(`volume musica non salvato (${savedVolume})`);
+  await sleep(400);
+  await page.screenshot({ path: `${OUT}/1c-settings.png` });
+  await page.evaluate(() => window.__game.scene.getScene('Menu').goto('main'));
+  await sleep(300);
   // pagina principale -> schermaglia -> avvio
   await page.keyboard.press('Enter');
   await sleep(400);
@@ -92,6 +107,9 @@ try {
   await page.screenshot({ path: `${OUT}/4-help.png` });
   await page.keyboard.press('Escape');
 
+  const musicInGame = await page.evaluate(() => window.__audio.music.state);
+  if (!musicInGame.running) errors.push('la musica non è partita');
+  if (musicInGame.theme !== 'game') errors.push(`tema musicale in partita: ${musicInGame.theme}`);
   const state = await page.evaluate(() => {
     const gs = window.__game.scene.getScene('Game');
     const w = gs.world;
@@ -143,6 +161,8 @@ try {
   await sleep(2200);
   await page.screenshot({ path: `${OUT}/5b-survival-over.png` });
   if (!survivalEnd.over) errors.push('la sopravvivenza non termina alla distruzione della Nave Madre');
+  const endTheme = await page.evaluate(() => window.__audio.music.state.theme);
+  if (endTheme !== 'victory' && endTheme !== 'defeat') errors.push(`tema di fine partita: ${endTheme}`);
 
   // partita veloce IA contro IA in modalità spettatore fino alla fine
   await page.evaluate(() => {
@@ -173,7 +193,7 @@ try {
   await sleep(2500);
   await page.screenshot({ path: `${OUT}/6-gameover.png` });
 
-  console.log(JSON.stringify({ renderer, state, survival, survivalEnd, result, errors }, null, 2));
+  console.log(JSON.stringify({ renderer, musicInGame, endTheme, state, survival, survivalEnd, result, errors }, null, 2));
   if (errors.length) process.exitCode = 1;
 } finally {
   await browser?.close();

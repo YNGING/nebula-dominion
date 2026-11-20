@@ -64,6 +64,12 @@ Armi (+10% danno), Scafi (+10% scafo, anche sulle navi già in campo), Motori (+
 | Frecce, bordi dello schermo, tasto centrale | sposta la camera · rotella: zoom · `Spazio`: centra la selezione |
 | `P` · `+`/`−` · `M` · `F1` | pausa · velocità · audio · aiuto |
 
+### Audio e grafica
+
+- **Musica generativa** (WebAudio, nessun file audio): pad, basso, arpeggio e percussioni sintetiche. L'intensità segue le battaglie che hai sullo schermo; temi diversi per menu, partita, vittoria e sconfitta.
+- **Effetti visivi**: scie dei motori, lampi di sparo, uscita delle navi dall'hangar, fumo e scintille sulle navi molto danneggiate.
+- **Impostazioni** (dal menu principale): volume della musica e degli effetti, effetti visivi Alti/Bassi (Bassi per computer meno potenti), audio attivo/disattivato. Vengono salvate nel browser.
+
 ## Sviluppo
 
 ```bash
@@ -82,7 +88,7 @@ npm run smoke      # smoke test con Playwright sulla build (richiede Playwright 
 - `src/data/` — statistiche di navi e armi, ricerca, dottrine, mappe: il bilanciamento si fa qui.
 - `src/data/mapgen.ts` — generatore di mappe casuali simmetriche (deterministico dato il seme).
 - `src/sim/stats.ts` — statistiche effettive per fazione (base + dottrina + ricerca).
-- `src/render/` — texture generate a runtime, rendering del mondo, nebbia di guerra, effetti sonori WebAudio.
+- `src/render/` — texture generate a runtime, rendering del mondo, nebbia di guerra, effetti sonori e musica generativa (`audio.ts`, `music.ts`, `musicTheory.ts`).
 - `src/scenes/`, `src/input/` — scene Phaser (menu, gioco, HUD) e controlli.
 - `tests/` — test di bilanciamento (morra cinese a parità di costo), economia, conquista e partite IA contro IA.
 

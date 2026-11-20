@@ -5,6 +5,7 @@ import { Rng } from '../sim/rng';
 import type { GameEvent, Unit } from '../sim/types';
 import type { World } from '../sim/World';
 import { sfx, type SfxName } from './audio';
+import { gfx } from './settings';
 import { lighten, planetAtmosphere, shipKey, SHIP_TEX_SCALE } from './textures';
 
 interface UnitView {
@@ -52,6 +53,13 @@ export class WorldRenderer {
   private visibleIds = new Set<number>();
   private frame = 0;
   private time = 0;
+  private trails: Phaser.GameObjects.Particles.ParticleEmitter;
+  private smoke: Phaser.GameObjects.Particles.ParticleEmitter;
+  /** lampi riutilizzabili (spari, uscite dalla Nave Madre) */
+  private flashes: { img: Phaser.GameObjects.Image; life: number; max: number }[] = [];
+  private flashIndex = 0;
+  private smokeTimer = 0;
+  private visionSources: { x: number; y: number; r: number }[] = [];
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -81,6 +89,29 @@ export class WorldRenderer {
       emitting: false,
     });
     this.debris.setDepth(DEPTH.fx);
+    this.trails = scene.add.particles(0, 0, 'spark', {
+      speed: { min: 0, max: 12 },
+      lifespan: { min: 300, max: 520 },
+      scale: { start: 0.7, end: 0 },
+      alpha: { start: 0.7, end: 0 },
+      blendMode: Phaser.BlendModes.ADD,
+      emitting: false,
+    });
+    this.trails.setDepth(DEPTH.glow);
+    this.smoke = scene.add.particles(0, 0, 'glow', {
+      speedX: { min: -12, max: 12 },
+      speedY: { min: -28, max: -8 },
+      lifespan: { min: 1200, max: 1900 },
+      scale: { start: 0.12, end: 0.42 },
+      alpha: { start: 0.45, end: 0 },
+      tint: [0x3a3f4b, 0x555b68, 0x2b2f38],
+      emitting: false,
+    });
+    this.smoke.setDepth(DEPTH.fx);
+    for (let i = 0; i < 48; i++) {
+      const img = scene.add.image(0, 0, 'glow').setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.fx).setVisible(false);
+      this.flashes.push({ img, life: 0, max: 1 });
+    }
     if (humanId >= 0) this.createFog();
   }
 
@@ -160,13 +191,20 @@ export class WorldRenderer {
 
   // ------------------------------------------------------------ visibilità
 
+  /** Punto dentro la visione del giocatore (sempre vero per lo spettatore). */
+  pointVisible(x: number, y: number): boolean {
+    if (this.humanId < 0) return true;
+    return this.visionSources.some((s) => (x - s.x) ** 2 + (y - s.y) ** 2 < s.r * s.r);
+  }
+
   isVisible(u: Unit): boolean {
     return this.humanId < 0 || u.faction === this.humanId || this.visibleIds.has(u.id);
   }
 
   private updateVisibility(): void {
     const w = this.world;
-    const sources: { x: number; y: number; r: number }[] = [];
+    const sources = this.visionSources;
+    sources.length = 0;
     for (const u of w.units) if (u.faction === this.humanId) sources.push({ x: u.x, y: u.y, r: UNITS[u.kind].vision });
     for (const p of w.planets) if (p.owner === this.humanId) sources.push({ x: p.x, y: p.y, r: p.radius + ECONOMY.planetVision });
     this.visibleIds.clear();
@@ -192,6 +230,11 @@ export class WorldRenderer {
 
   // ------------------------------------------------------------ eventi
 
+  /** Il punto è nell'inquadratura ed è visibile al giocatore (per musica e suoni). */
+  onScreen(x: number, y: number): boolean {
+    return this.inView(x, y, 50);
+  }
+
   private inView(x: number, y: number, margin = 100): boolean {
     const v = this.scene.cameras.main.worldView;
     return x > v.x - margin && x < v.right + margin && y > v.y - margin && y < v.bottom + margin;
@@ -211,10 +254,14 @@ export class WorldRenderer {
       case 'fire': {
         const names: Record<string, SfxName> = { laser: 'laser', flak: 'flak', cannon: 'cannon', beam: 'beam' };
         sfx.play(names[e.weapon], this.audible(e.x, e.y) * 0.8);
+        if (gfx.rich && this.inView(e.x, e.y, 20) && this.pointVisible(e.x, e.y)) {
+          const size = e.weapon === 'cannon' ? 34 : e.weapon === 'flak' ? 18 : 11;
+          this.flash(e.x, e.y, size, lighten(this.colorOf(e.faction), 0.5), 0.09);
+        }
         break;
       }
       case 'hit': {
-        if (!this.inView(e.x, e.y)) break;
+        if (!this.inView(e.x, e.y) || !this.pointVisible(e.x, e.y)) break;
         if (e.weapon === 'cannon') {
           this.sparks.setParticleTint(0xffe0b2);
           this.sparks.explode(10, e.x, e.y);
@@ -251,6 +298,13 @@ export class WorldRenderer {
         break;
       }
       case 'built': {
+        if (this.inView(e.x, e.y) && (e.faction === this.humanId || this.pointVisible(e.x, e.y))) {
+          // lampo di "salto" all'uscita dall'hangar
+          const col = this.colorOf(e.faction);
+          this.flash(e.x, e.y, e.kind === 'turret' ? 60 : 46, lighten(col, 0.4), 0.35);
+          this.sparks.setParticleTint(lighten(col, 0.5));
+          this.sparks.explode(8, e.x, e.y);
+        }
         if (e.faction === this.humanId) {
           this.ringPulse(e.x, e.y, 30, this.colorOf(e.faction), 400, 0.8);
           sfx.play('build');
@@ -263,7 +317,11 @@ export class WorldRenderer {
       }
       case 'research': {
         const m = this.world.mothershipOf(e.faction);
-        if (m && e.faction === this.humanId) this.ringPulse(m.x, m.y, m.radius * 3, 0xffd54f, 800, 0.9);
+        if (m && e.faction === this.humanId) {
+          this.ringPulse(m.x, m.y, m.radius * 3, 0xffd54f, 800, 0.9);
+          this.sparks.setParticleTint(0xffd54f);
+          this.sparks.explode(40, m.x, m.y);
+        }
         break;
       }
       case 'captured': {
@@ -292,6 +350,54 @@ export class WorldRenderer {
       ease: 'Cubic.easeOut',
       onComplete: () => ring.destroy(),
     });
+  }
+
+  /** Lampo breve con un'immagine del gruppo riutilizzabile. */
+  private flash(x: number, y: number, size: number, tint: number, seconds: number): void {
+    const f = this.flashes[this.flashIndex++ % this.flashes.length];
+    f.life = seconds;
+    f.max = seconds;
+    f.img.setPosition(x, y).setTint(tint).setScale(size / 64).setAlpha(1).setVisible(true);
+  }
+
+  /** Scie dei motori e fumo delle navi danneggiate (solo con effetti alti). */
+  private drawEffects(alpha: number, dt: number): void {
+    for (const f of this.flashes) {
+      if (f.life <= 0) continue;
+      f.life -= dt;
+      if (f.life <= 0) f.img.setVisible(false);
+      else f.img.setAlpha(f.life / f.max);
+    }
+    if (!gfx.rich || dt <= 0) return;
+    const view = this.scene.cameras.main.worldView;
+    let budget = 180;
+    this.smokeTimer -= dt;
+    const smokeNow = this.smokeTimer <= 0;
+    if (smokeNow) this.smokeTimer = 0.2;
+    for (const u of this.world.units) {
+      if (!view.contains(u.x, u.y) || !this.isVisible(u)) continue;
+      const def = UNITS[u.kind];
+      if (smokeNow && (def.structure || u.kind === 'battleship') && u.hp < u.maxHp * 0.4) {
+        const r = u.radius * 0.6;
+        this.smoke.emitParticleAt(u.x + (Math.random() - 0.5) * r, u.y + (Math.random() - 0.5) * r, 1);
+        if (Math.random() < 0.35) {
+          this.sparks.setParticleTint(0xffab40);
+          this.sparks.explode(2, u.x + (Math.random() - 0.5) * r, u.y + (Math.random() - 0.5) * r);
+        }
+      }
+      if (def.structure || budget <= 0) continue;
+      const speed = Math.hypot(u.vx, u.vy);
+      if (speed < def.speed * 0.3) continue;
+      // le navi grandi lasciano una scia più fitta
+      const every = u.radius >= 12 ? 1 : 2;
+      if ((this.frame + u.id) % every !== 0) continue;
+      const x = u.px + (u.x - u.px) * alpha;
+      const y = u.py + (u.y - u.py) * alpha;
+      const back = u.radius * (u.kind === 'battleship' ? 1.1 : 0.95);
+      this.trails.setParticleTint(lighten(this.colorOf(u.faction), 0.35));
+      this.trails.emitParticleAt(x - Math.cos(u.angle) * back, y - Math.sin(u.angle) * back, 1);
+      budget--;
+    }
   }
 
   /** Piccolo segnale nel punto di un comando. */
@@ -344,6 +450,7 @@ export class WorldRenderer {
     }
 
     this.drawFx(alpha);
+    this.drawEffects(alpha, dt);
     this.drawOverlay(alpha, sel);
   }
 

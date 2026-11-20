@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { sfx } from './render/audio';
+import { music } from './render/music';
 import { BackgroundScene } from './scenes/BackgroundScene';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
@@ -30,5 +32,6 @@ void waitFonts().then(() => {
     render: { antialias: true },
     scene: [BootScene, BackgroundScene, MenuScene, GameScene, HudScene],
   });
-  (window as unknown as { __game: Phaser.Game }).__game = game;
+  // accesso per debug e smoke test
+  Object.assign(window, { __game: game, __audio: { sfx, music } });
 });
